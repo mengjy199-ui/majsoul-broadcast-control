@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Windows.Media;
 
 namespace MajsoulBroadcastScorer.V27;
 
@@ -12,6 +13,8 @@ public sealed class PlayerEditorViewModel : INotifyPropertyChanged
     private string _total = "+0.0";
     private string _riichiMode = "自动跟随 API";
     private string _avatarStatus = "未上传";
+    private string _avatarPreviewText = "未上传";
+    private ImageSource? _avatarPreview;
     private string _avatarFrameMode = "默认边框";
     private string _avatarFrameStatus = "默认";
     private string _teamName = string.Empty;
@@ -35,6 +38,17 @@ public sealed class PlayerEditorViewModel : INotifyPropertyChanged
     public string Total { get => _total; set => Set(ref _total, value); }
     public string RiichiMode { get => _riichiMode; set => Set(ref _riichiMode, value); }
     public string AvatarStatus { get => _avatarStatus; set => Set(ref _avatarStatus, value); }
+    public string AvatarPreviewText { get => _avatarPreviewText; set => Set(ref _avatarPreviewText, value); }
+    public ImageSource? AvatarPreview
+    {
+        get => _avatarPreview;
+        set
+        {
+            if (ReferenceEquals(_avatarPreview, value)) return;
+            _avatarPreview = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AvatarPreview)));
+        }
+    }
     public string AvatarFrameMode { get => _avatarFrameMode; set => Set(ref _avatarFrameMode, value); }
     public string AvatarFrameStatus { get => _avatarFrameStatus; set => Set(ref _avatarFrameStatus, value); }
     public string TeamName { get => _teamName; set => Set(ref _teamName, value); }

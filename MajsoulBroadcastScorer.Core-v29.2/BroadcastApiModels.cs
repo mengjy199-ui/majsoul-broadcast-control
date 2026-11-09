@@ -41,6 +41,8 @@ public sealed class BroadcastObserveState
     public IReadOnlyList<BroadcastPlayerState> Players { get; init; } = [];
     public bool Ended { get; init; }
     public IReadOnlyList<BroadcastFinalRankingState> FinalRanking { get; init; } = [];
+    public IReadOnlyList<JsonElement> RoundResults { get; init; } = [];
+    public int? RoundResultSchema { get; init; }
 }
 
 public sealed class BroadcastFinalRankingState

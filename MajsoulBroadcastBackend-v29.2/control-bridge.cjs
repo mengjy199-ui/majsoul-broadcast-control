@@ -2,6 +2,7 @@
 
 module.exports = function installControlBridge(context) {
   const { broadcast, liqi, observe, liveObserve, logger, electron } = context;
+  installRoundResultCapture({ broadcast, observe, liveObserve, logger });
   const expectedToken = process.env.MAJSOUL_V29_CONTROL_TOKEN || "";
   const originalHandleMessage = broadcast.handleMessage.bind(broadcast);
 
@@ -44,8 +45,8 @@ module.exports = function installControlBridge(context) {
       switch (message.command) {
         case "host.status":
           sendResult(session, requestId, true, {
-            version: "29.2",
-            capabilities: ["auth", "contest", "observe", "shutdown"],
+            version: "0.292",
+            capabilities: ["auth", "contest", "observe", "shutdown", "round-results"],
             auth: liqi.getState(),
             broadcast: broadcast.currentSnapshot()
           });
@@ -112,3 +113,207 @@ module.exports = function installControlBridge(context) {
     }
   };
 };
+
+// ObserveTracker already decodes both Record* and Action* events before emitting
+// its public action log. Capture only settlement data from that existing hook;
+// never execute a second decoder or infer a result from score differences.
+function installRoundResultCapture({ broadcast, observe, liveObserve, logger }) {
+  const crypto = require("node:crypto");
+  const games = new Map();
+  const contexts = new WeakMap();
+  const terminalTypes = new Map([
+    ["RecordHule", "hule"], ["ActionHule", "hule"],
+    ["RecordNoTile", "noTile"], ["ActionNoTile", "noTile"],
+    ["RecordLiuJu", "liuJu"], ["ActionLiuJu", "liuJu"]
+  ]);
+  const number = (value) => typeof value === "number" && Number.isFinite(value) ? value : null;
+  const seatNumber = (value) => Number.isInteger(value) && value >= 0 && value <= 3 ? value : null;
+  const protoSeat = (object) => seatNumber(object?.seat === undefined ? 0 : object.seat);
+  const strings = (value) => Array.isArray(value) ? value.filter((item) => typeof item === "string") : [];
+  const numbers = (value) => Array.isArray(value) && value.every((item) => number(item) !== null) ? value.slice() : [];
+  const publicCopy = (value) => value === undefined ? null : JSON.parse(JSON.stringify(value));
+  const pick = (object, fields) => Object.fromEntries(fields.filter((key) => object?.[key] !== undefined).map((key) => [key, publicCopy(object[key])]));
+
+  function contextFor(tracker) {
+    let state = contexts.get(tracker);
+    if (!state || state.gameUuid !== tracker.gameUuid) {
+      state = { gameUuid: tracker.gameUuid, round: null, lastSource: null };
+      contexts.set(tracker, state);
+    }
+    return state;
+  }
+
+  function gameFor(uuid) {
+    if (!games.has(uuid)) games.set(uuid, { results: new Map() });
+    return games.get(uuid);
+  }
+
+  function publicSettlement(type, data) {
+    if (type === "hule") {
+      return pick(data, ["hules", "old_scores", "delta_scores", "scores", "gameend", "doras"]);
+    }
+    if (type === "noTile") {
+      const result = pick(data, ["liujumanguan", "gameend"]);
+      // Only tenpai hands are publicly revealed at an exhaustive draw.
+      result.players = (Array.isArray(data.players) ? data.players : []).map((player) => ({
+        ...pick(player, ["tingpai", "already_hule"]),
+        ...(player.tingpai === true ? pick(player, ["hand", "tings"]) : {})
+      }));
+      result.scores = (Array.isArray(data.scores) ? data.scores : []).map((score) =>
+        pick(score, ["seat", "old_scores", "delta_scores", "score", "taxes", "lines"]));
+      if (Array.isArray(data.hules_history)) result.hules_history = publicCopy(data.hules_history);
+      return result;
+    }
+    // Do not include allplayertiles: abortive draws do not necessarily reveal
+    // every opponent's concealed hand. Keep the announcing player's reveal.
+    return pick(data, ["type", "seat", "tiles", "gameend", "hules_history"]);
+  }
+
+  function winnerFrom(hule, state) {
+    const seat = protoSeat(hule);
+    const isTsumo = hule.zimo === true;
+    const last = state.lastSource;
+    const knownSource = !isTsumo && last && last.seat !== seat &&
+      (!hule.hu_tile || !last.tile || hule.hu_tile === last.tile);
+    const isYakuman = hule.yiman === true;
+    return {
+      seat,
+      fromSeat: knownSource ? last.seat : null,
+      fromSeatSource: knownSource ? last.kind : null,
+      isTsumo,
+      tiles: strings(hule.hand),
+      melds: strings(hule.ming),
+      winTile: typeof hule.hu_tile === "string" ? hule.hu_tile : null,
+      fans: (Array.isArray(hule.fans) ? hule.fans : []).map((fan) => ({
+        id: number(fan.id),
+        name: typeof fan.name === "string" && fan.name.trim() ? fan.name : null,
+        value: number(fan.val)
+      })),
+      han: isYakuman ? null : number(hule.count),
+      fu: number(hule.fu),
+      isYakuman,
+      yakumanCount: isYakuman ? number(hule.count) : null,
+      isDealer: hule.qinjia === true,
+      points: number(hule.point_sum),
+      pointRon: number(hule.point_rong),
+      pointTsumoDealer: number(hule.point_zimo_qin),
+      pointTsumoNonDealer: number(hule.point_zimo_xian),
+      doras: strings(hule.doras),
+      uraDoras: strings(hule.li_doras)
+    };
+  }
+
+  function capture(tracker, actionName, data) {
+    const state = contextFor(tracker);
+    if (actionName === "RecordNewRound" || actionName === "ActionNewRound") {
+      // Protobuf omits scalar zero values in the current decoder.
+      state.round = {
+        chang: number(data.chang === undefined ? 0 : data.chang),
+        ju: number(data.ju === undefined ? 0 : data.ju),
+        ben: number(data.ben === undefined ? 0 : data.ben)
+      };
+      state.lastSource = null;
+      return;
+    }
+    if (actionName === "RecordDiscardTile" || actionName === "ActionDiscardTile") {
+      const seat = protoSeat(data);
+      state.lastSource = seat === null ? null : { seat, tile: typeof data.tile === "string" ? data.tile : null, kind: "last-discard" };
+      return;
+    }
+    if (actionName === "RecordAnGangAddGang" || actionName === "ActionAnGangAddGang") {
+      const seat = protoSeat(data);
+      state.lastSource = seat === null ? null : { seat, tile: typeof data.tiles === "string" ? data.tiles : null, kind: "last-kan" };
+      return;
+    }
+    const type = terminalTypes.get(actionName);
+    const uuid = typeof tracker.gameUuid === "string" ? tracker.gameUuid : "";
+    if (!type || !uuid) return;
+    const raw = publicSettlement(type, data);
+    const digest = crypto.createHash("sha256").update(JSON.stringify(raw)).digest("hex").slice(0, 24);
+    const roundKnown = state.round && state.round.chang !== null && state.round.ju !== null && state.round.ben !== null;
+    const key = roundKnown
+      ? `${uuid}:${state.round.chang}:${state.round.ju}:${state.round.ben}`
+      : `${uuid}:unknown:${digest}`;
+    const game = gameFor(uuid);
+    const previous = game.results.get(key);
+    const winners = type === "hule"
+      ? (Array.isArray(data.hules) ? data.hules : []).map((hule) => winnerFrom(hule, state)).filter((winner) => winner.seat !== null)
+      : [];
+    // A single Hule message can contain multiple winners. Replayed settlement
+    // messages update their original entry and preserve any earlier winners.
+    const mergedWinners = new Map((previous?.winners || []).map((winner) => [winner.seat, winner]));
+    for (const winner of winners) {
+      const known = mergedWinners.get(winner.seat);
+      if (known) {
+        // Partial history replays must not erase previously observed details.
+        for (const field of [
+          "fromSeat", "fromSeatSource", "winTile", "fans", "tiles", "melds",
+          "han", "fu", "yakumanCount", "points", "pointRon",
+          "pointTsumoDealer", "pointTsumoNonDealer", "doras", "uraDoras"
+        ]) {
+          const value = winner[field];
+          if ((value === null || value === "" || (Array.isArray(value) && value.length === 0)) && known[field] != null)
+            winner[field] = known[field];
+        }
+      }
+      mergedWinners.set(winner.seat, winner);
+    }
+    const publicGroups = type === "noTile" ? raw.scores : [];
+    const directDeltas = numbers(data.delta_scores);
+    const deltaScores = directDeltas.length ? directDeltas
+      : publicGroups.length === 1 ? numbers(publicGroups[0].delta_scores) : [];
+    const directScores = numbers(data.scores);
+    game.results.set(key, {
+      key, gameUuid: uuid,
+      chang: roundKnown ? state.round.chang : null,
+      ju: roundKnown ? state.round.ju : null,
+      ben: roundKnown ? state.round.ben : null,
+      roundKnown: !!roundKnown,
+      type, actionName,
+      source: "decoded-observe-action",
+      timestamp: previous?.timestamp ?? Date.now(),
+      players: (Array.isArray(tracker.players) ? tracker.players : []).map((player) => ({
+        seat: seatNumber(player.seat),
+        nickname: typeof player.nickname === "string" ? player.nickname : ""
+      })),
+      winners: [...mergedWinners.values()],
+      deltaScores,
+      scores: directScores.length ? directScores : numbers(data.gameend?.scores),
+      scoreGroups: publicGroups,
+      drawType: type === "liuJu" ? number(data.type === undefined ? 0 : data.type) : null,
+      nagashiMangan: type === "noTile" && data.liujumanguan === true,
+      rawScope: "public-settlement-fields",
+      raw
+    });
+  }
+
+  for (const tracker of [observe, liveObserve]) {
+    const reset = tracker.resetState;
+    tracker.resetState = function (...args) {
+      contexts.delete(this);
+      return reset.apply(this, args);
+    };
+    tracker.onLog((line) => {
+      const match = typeof line === "string" && line.match(/\] action ([A-Za-z0-9_.]+) seat=[^ ]+ data=([\s\S]*)$/);
+      if (!match) return;
+      try {
+        capture(tracker, match[1], JSON.parse(match[2]));
+      } catch {
+        logger.error("逐局结算记录解析失败；原始观战状态继续更新");
+      }
+    });
+  }
+
+  const setObserve = broadcast.setObserve;
+  broadcast.setObserve = function (state) {
+    if (state && typeof state.gameUuid === "string") {
+      const game = games.get(state.gameUuid);
+      state = {
+        ...state,
+        roundResults: game ? [...game.results.values()] : [],
+        roundResultSchema: 1
+      };
+    }
+    return setObserve.call(this, state);
+  };
+}

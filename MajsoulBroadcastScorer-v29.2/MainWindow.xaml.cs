@@ -34,6 +34,7 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _apiDelayTimer;
     private readonly string?[] _rawScoreInputs = new string?[4];
     private readonly string?[] _rawTotalInputs = new string?[4];
+    private readonly string?[] _avatarPreviewKeys = new string?[4];
     private bool _apiConnectionAvailable;
     private string _latestApiStatus = "观战 API 未连接";
     private DateTimeOffset? _lastApiReceivedAt;
@@ -80,6 +81,7 @@ public partial class MainWindow : Window
             _playerEditors.Add(new PlayerEditorViewModel(seat, PlayerEditorChanged));
         PlayerEditorsControl.ItemsSource = _playerEditors;
         ContestGamesList.ItemsSource = _contestGames;
+        RoundRecordsList.ItemsSource = _roundReportRows;
         InitializeControls();
 
         _apiClient.StatusChanged += ApiClient_StatusChanged;
@@ -120,8 +122,7 @@ public partial class MainWindow : Window
         VerticalNumberComboBox.SelectedValue = _verticalCardPublication.Preview.Number == VerticalNumberContent.CurrentScore ? "当前分数（持有点数）" : "精算点";
         WriteLeftBoardFocusControls();
         WriteLayoutControls();
-        UpdateTotalApplyButton();
-        UpdatePlayerApplyButton();
+        UpdateConfirmChangesButton();
         _updatingUi = false;
         UpdateStyleControls();
         UpdateControlButtons();
@@ -156,6 +157,7 @@ public partial class MainWindow : Window
     private void ApiClient_StateChanged(object? sender, BroadcastApiState state) => Dispatcher.BeginInvoke(() =>
     {
         _lastApiReceivedAt = DateTimeOffset.Now;
+        ObserveRoundDetails(state);
         try
         {
             if (_reportReducer.Apply(state))
@@ -224,6 +226,7 @@ public partial class MainWindow : Window
         _apiClient.AuthChanged -= ApiClient_AuthChanged;
         _apiStateQueue.Clear();
         try { _scoreReportRecorder.Dispose(); } catch (IOException) { }
+        try { _roundReportRecorder.Dispose(); } catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
     }
 
     private async Task ProbeBackendControlAsync()
@@ -506,6 +509,14 @@ public partial class MainWindow : Window
                     _ => "自动跟随 API"
                 };
                 var avatarPath = _playerPresentationDraft.GetAvatarPath(shown.Seat, setting.AvatarPath);
+                var resolvedAvatar = _settingsStore.ResolveAsset(avatarPath);
+                var avatarPreviewKey = resolvedAvatar is null ? string.Empty : $"{resolvedAvatar}|{VersionOf(resolvedAvatar)}";
+                if (_avatarPreviewKeys[shown.Seat] != avatarPreviewKey)
+                {
+                    _avatarPreviewKeys[shown.Seat] = avatarPreviewKey;
+                    editor.AvatarPreview = LoadBitmap(resolvedAvatar, 192);
+                    editor.AvatarPreviewText = resolvedAvatar is null ? "未上传" : "无法预览";
+                }
                 editor.AvatarStatus = _playerPresentationDraft.IsAvatarDirty(shown.Seat)
                     ? "待更新"
                     : _settingsStore.ResolveAsset(avatarPath) is null ? "未上传" : "已上传";
@@ -548,13 +559,13 @@ public partial class MainWindow : Window
         {
             case nameof(PlayerEditorViewModel.Name):
                 _playerPresentationDraft.StageName(editor.Seat, editor.Name);
-                UpdatePlayerApplyButton();
+                UpdateConfirmChangesButton();
                 return;
             case nameof(PlayerEditorViewModel.Score):
                 _rawScoreInputs[editor.Seat] = editor.Score;
                 if (int.TryParse(editor.Score, out var score))
                     _playerPresentationDraft.StageScore(editor.Seat, score);
-                UpdatePlayerApplyButton();
+                UpdateConfirmChangesButton();
                 UpdateInputStatus();
                 return;
             case nameof(PlayerEditorViewModel.Wind):
@@ -565,7 +576,7 @@ public partial class MainWindow : Window
                 _rawTotalInputs[editor.Seat] = editor.Total;
                 if (TryParseDecimal(editor.Total, out var total))
                     _totalPointsDraft.Set(editor.Seat, total);
-                UpdateTotalApplyButton();
+                UpdateConfirmChangesButton();
                 UpdateInputStatus();
                 return;
             case nameof(PlayerEditorViewModel.RiichiMode):
@@ -583,11 +594,11 @@ public partial class MainWindow : Window
                     "隐藏头像框" => AvatarFrameDisplayMode.Hidden,
                     _ => AvatarFrameDisplayMode.Default
                 });
-                UpdatePlayerApplyButton();
+                UpdateConfirmChangesButton();
                 return;
             case nameof(PlayerEditorViewModel.TeamName):
                 _playerPresentationDraft.StageTeamName(editor.Seat, editor.TeamName);
-                UpdatePlayerApplyButton();
+                UpdateConfirmChangesButton();
                 return;
             default:
                 return;
@@ -595,19 +606,29 @@ public partial class MainWindow : Window
         SaveRefresh();
     }
 
-    private void ApplyPlayerChanges_Click(object sender, RoutedEventArgs e)
+    private void ConfirmChanges_Click(object sender, RoutedEventArgs e)
     {
-        var invalidSeat = Enumerable.Range(0, 4)
+        var invalidScoreSeat = Enumerable.Range(0, 4)
             .FirstOrDefault(seat => _rawScoreInputs[seat] is not null && !int.TryParse(_rawScoreInputs[seat], out _), -1);
-        if (invalidSeat >= 0)
+        if (invalidScoreSeat >= 0)
         {
-            PlayerInputStatusText.Text = $"位置 {invalidSeat + 1} 的分数不是有效整数，请修正后再确认。";
+            PlayerInputStatusText.Text = $"位置 {invalidScoreSeat + 1} 的分数不是有效整数，请修正后再确认。";
             return;
         }
-        if (!_playerPresentationDraft.HasPendingChanges && _rawScoreInputs.All(value => value is null))
+        var invalidTotalSeat = Enumerable.Range(0, 4)
+            .FirstOrDefault(seat => _rawTotalInputs[seat] is not null && !TryParseDecimal(_rawTotalInputs[seat]!, out _), -1);
+        if (invalidTotalSeat >= 0)
+        {
+            PlayerInputStatusText.Text = $"位置 {invalidTotalSeat + 1} 的累计精算点格式不正确，请修正后再确认。";
             return;
+        }
+        if (!HasPendingChanges()) return;
+
+        // 先完成全部输入校验，再一起提交资料和累计精算点。
         _playerPresentationDraft.Apply(_settings);
+        _totalPointsDraft.Apply(_settings);
         Array.Fill(_rawScoreInputs, null);
+        Array.Fill(_rawTotalInputs, null);
         _reducer.UpdateSettings(_settings);
         _reportReducer.UpdateSettings(_settings);
         try
@@ -619,19 +640,18 @@ public partial class MainWindow : Window
             ReportStatusText.Text = "报告写入失败：" + exception.Message;
         }
         PlayerInputStatusText.Text = string.Empty;
-        UpdatePlayerApplyButton();
+        UpdateConfirmChangesButton();
         SaveRefresh();
     }
 
-    private void UpdatePlayerApplyButton()
+    private bool HasPendingChanges() =>
+        _playerPresentationDraft.HasPendingChanges || _totalPointsDraft.HasPendingChanges ||
+        _rawScoreInputs.Any(value => value is not null) || _rawTotalInputs.Any(value => value is not null);
+
+    private void UpdateConfirmChangesButton()
     {
-        if (ApplyPlayerChangesButton is null)
-            return;
-        var pending = _playerPresentationDraft.HasPendingChanges || _rawScoreInputs.Any(value => value is not null);
-        ApplyPlayerChangesButton.IsEnabled = pending;
-        ApplyPlayerChangesButton.Content = pending
-            ? "确认更新选手资料"
-            : "选手资料已同步";
+        if (ConfirmChangesButton is not null)
+            ConfirmChangesButton.IsEnabled = HasPendingChanges();
     }
 
     private void UpdateInputStatus()
@@ -650,24 +670,6 @@ public partial class MainWindow : Window
             : string.Empty;
     }
 
-    private void ApplyTotals_Click(object sender, RoutedEventArgs e)
-    {
-        var invalidSeat = Enumerable.Range(0, 4)
-            .FirstOrDefault(seat => _rawTotalInputs[seat] is not null && !TryParseDecimal(_rawTotalInputs[seat]!, out _), -1);
-        if (invalidSeat >= 0)
-        {
-            PlayerInputStatusText.Text = $"位置 {invalidSeat + 1} 的 START 精算点格式不正确，请修正后再确认。";
-            return;
-        }
-        if (!_totalPointsDraft.HasPendingChanges && _rawTotalInputs.All(value => value is null))
-            return;
-        _totalPointsDraft.Apply(_settings);
-        Array.Fill(_rawTotalInputs, null);
-        PlayerInputStatusText.Text = string.Empty;
-        UpdateTotalApplyButton();
-        SaveRefresh();
-    }
-
     private void StageProjectedTotals_Click(object sender, RoutedEventArgs e)
     {
         var display = _reducer.Current;
@@ -678,7 +680,7 @@ public partial class MainWindow : Window
             _totalPointsDraft.SetAll(projectedTotals);
             Array.Fill(_rawTotalInputs, null);
             UpdatePlayerEditors(display);
-            UpdateTotalApplyButton();
+            UpdateConfirmChangesButton();
         }
         catch (ArgumentException)
         {
@@ -690,17 +692,6 @@ public partial class MainWindow : Window
         }
     }
 
-    private void UpdateTotalApplyButton()
-    {
-        if (ApplyTotalsButton is null)
-            return;
-        var pending = _totalPointsDraft.HasPendingChanges || _rawTotalInputs.Any(value => value is not null);
-        ApplyTotalsButton.IsEnabled = pending;
-        ApplyTotalsButton.Content = pending
-            ? "确认更新精算点（待同步）"
-            : "精算点已同步";
-    }
-
     private void RestoreApi_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not Button { DataContext: PlayerEditorViewModel editor } button)
@@ -710,18 +701,18 @@ public partial class MainWindow : Window
             case "name":
                 _playerPresentationDraft.StageRestoreName(editor.Seat);
                 UpdatePlayerEditors(_reducer.Current);
-                UpdatePlayerApplyButton();
+                UpdateConfirmChangesButton();
                 return;
             case "score":
                 _rawScoreInputs[editor.Seat] = null;
                 _playerPresentationDraft.StageRestoreScore(editor.Seat);
                 UpdatePlayerEditors(_reducer.Current);
-                UpdatePlayerApplyButton();
+                UpdateConfirmChangesButton();
                 return;
             case "team":
                 _playerPresentationDraft.StageRestoreTeam(editor.Seat);
                 UpdatePlayerEditors(_reducer.Current);
-                UpdatePlayerApplyButton();
+                UpdateConfirmChangesButton();
                 return;
             case "wind":
                 _settings.Players[editor.Seat].WindLocked = false;
@@ -742,7 +733,7 @@ public partial class MainWindow : Window
             _playerPresentationDraft.StageAvatarPath(editor.Seat, pendingPath);
             _playerPresentationDraft.StageAvatarMode(editor.Seat, AvatarDisplayMode.Image);
             UpdatePlayerEditors(_reducer.Current);
-            UpdatePlayerApplyButton();
+            UpdateConfirmChangesButton();
         }
         catch (Exception exception) { MessageBox.Show(exception.Message, "上传头像失败"); }
     }
@@ -759,7 +750,7 @@ public partial class MainWindow : Window
             _playerPresentationDraft.StageAvatarFramePath(editor.Seat, pendingPath);
             _playerPresentationDraft.StageAvatarFrameMode(editor.Seat, AvatarFrameDisplayMode.Custom);
             UpdatePlayerEditors(_reducer.Current);
-            UpdatePlayerApplyButton();
+            UpdateConfirmChangesButton();
         }
         catch (Exception exception) { MessageBox.Show(exception.Message, "上传头像框失败"); }
     }
@@ -768,8 +759,11 @@ public partial class MainWindow : Window
     {
         try
         {
-            ReportStatusText.Text = _scoreReportRecorder.SaveCurrent(DateTimeOffset.Now)
-                ? "当前对局报告已保存。"
+            var scoreSaved = _scoreReportRecorder.SaveCurrent(DateTimeOffset.Now);
+            var roundsSaved = _roundReportRecorder.SaveCurrent();
+            _roundReportError = null;
+            ReportStatusText.Text = scoreSaved || roundsSaved
+                ? "对局报告已保存；逐局详情为 CSV、JSON 和文本格式。"
                 : "尚未收到可保存的对局数据。";
         }
         catch (IOException exception)
@@ -800,9 +794,9 @@ public partial class MainWindow : Window
     {
         if (ReportStatusText is null)
             return;
-        ReportStatusText.Text = string.IsNullOrWhiteSpace(_scoreReportRecorder.CurrentGameUuid)
-            ? "等待新对局；报告保存在程序目录的 reports 文件夹。"
-            : $"正在记录 {_scoreReportRecorder.CurrentGameUuid}，已保存 {_scoreReportRecorder.CurrentEntryCount} 条分数状态。";
+        ReportStatusText.Text = _roundReportError ?? (string.IsNullOrWhiteSpace(_roundReportRecorder.GameUuid)
+            ? "等待对局；逐局结算与分数记录保存在程序目录的 reports 文件夹。"
+            : $"对局 {_roundReportRecorder.GameUuid}：已记录 {_roundReportRecorder.Count} 局结算、{_scoreReportRecorder.CurrentEntryCount} 条分数状态。");
     }
 
     private async void UploadAsset_Click(object sender, RoutedEventArgs e)
@@ -1124,7 +1118,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private static BitmapImage? LoadBitmap(string? path)
+    private static BitmapImage? LoadBitmap(string? path, int decodePixelWidth = 0)
     {
         if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return null;
         try
@@ -1132,6 +1126,7 @@ public partial class MainWindow : Window
             var bitmap = new BitmapImage();
             bitmap.BeginInit();
             bitmap.CacheOption = BitmapCacheOption.OnLoad;
+            if (decodePixelWidth > 0) bitmap.DecodePixelWidth = decodePixelWidth;
             bitmap.UriSource = new Uri(path, UriKind.Absolute);
             bitmap.EndInit();
             bitmap.Freeze();

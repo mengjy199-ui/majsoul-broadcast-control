@@ -1,5 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Runtime.InteropServices;
+using System.Windows.Interop;
 
 namespace MajsoulBroadcastScorer.V27;
 
@@ -11,13 +13,13 @@ public partial class MainWindow
     private Task? _previewInitialization;
 
     private void OpenObservationControl_Click(object sender, RoutedEventArgs e) =>
-        ShowToolWindow("control", "观战控制", ObservationControlContent, 760, 640);
+        ShowToolWindow("control", "观战登录", ObservationControlContent, 760, 640);
 
     private void OpenObservationMode_Click(object sender, RoutedEventArgs e) =>
-        ShowToolWindow("mode", "观战方式", ObservationModeContent, 560, 370);
+        ShowToolWindow("mode", "延迟/实时观战", ObservationModeContent, 560, 370);
 
     private void OpenReports_Click(object sender, RoutedEventArgs e) =>
-        ShowToolWindow("reports", "对局记录", ReportsContent, 640, 340);
+        ShowToolWindow("reports", "对局记录", ReportsContent, 980, 740);
 
     private async void OpenPreview_Click(object sender, RoutedEventArgs e)
     {
@@ -85,14 +87,21 @@ public partial class MainWindow
                 Content = new Border { Padding = new Thickness(16), Child = body }
             };
             var toolWindow = window;
+            if (floatingPreview)
+                toolWindow.SourceInitialized += (_, _) => DisablePreviewCloseButton(toolWindow);
             toolWindow.Closing += (_, e) =>
             {
                 if (_closingToolWindows)
                     return;
                 e.Cancel = true;
+                if (floatingPreview) return;
                 if (key == "control")
                     PasswordInput.Clear();
-                toolWindow.Hide();
+                // 关闭事件结束后再隐藏，避免取消关闭时恢复窗口可见状态。
+                toolWindow.Dispatcher.BeginInvoke(() =>
+                {
+                    if (!_closingToolWindows) toolWindow.Hide();
+                });
             };
             _toolWindows.Add(key, toolWindow);
         }
@@ -113,6 +122,25 @@ public partial class MainWindow
         UpdateConnectionIndicator();
         UpdateControlButtons();
     }
+
+    private static void DisablePreviewCloseButton(Window window)
+    {
+        var handle = new WindowInteropHelper(window).Handle;
+        var menu = GetPreviewSystemMenu(handle, false);
+        if (menu == IntPtr.Zero) return;
+        EnablePreviewMenuItem(menu, 0xF060, 0x0001);
+        DrawPreviewMenuBar(handle);
+    }
+
+    [DllImport("user32.dll", EntryPoint = "GetSystemMenu")]
+    private static extern IntPtr GetPreviewSystemMenu(IntPtr window, [MarshalAs(UnmanagedType.Bool)] bool revert);
+
+    [DllImport("user32.dll", EntryPoint = "EnableMenuItem")]
+    private static extern uint EnablePreviewMenuItem(IntPtr menu, uint item, uint flags);
+
+    [DllImport("user32.dll", EntryPoint = "DrawMenuBar")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool DrawPreviewMenuBar(IntPtr window);
 
     private void ContestGameSelection_Changed(object sender, SelectionChangedEventArgs e) =>
         UpdateControlButtons();
