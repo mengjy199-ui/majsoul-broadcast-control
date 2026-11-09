@@ -35,6 +35,8 @@ public sealed class PlayerEditorViewModel : INotifyPropertyChanged
     public Action<PlayerEditorViewModel, string> Changed { get; }
     public string Name { get => _name; set => Set(ref _name, value); }
     public string Score { get => _score; set => Set(ref _score, value); }
+    public string ScoreDisplay => int.TryParse(_score, out var score)
+        ? score.ToString("N0", System.Globalization.CultureInfo.InvariantCulture) : _score;
     public string Wind { get => _wind; set => Set(ref _wind, value); }
     public string Total { get => _total; set => Set(ref _total, value); }
     public string RiichiMode { get => _riichiMode; set => Set(ref _riichiMode, value); }
@@ -72,6 +74,8 @@ public sealed class PlayerEditorViewModel : INotifyPropertyChanged
             return;
         field = value;
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        if (propertyName == nameof(Score))
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ScoreDisplay)));
         if (!_silent)
             Changed(this, propertyName);
     }

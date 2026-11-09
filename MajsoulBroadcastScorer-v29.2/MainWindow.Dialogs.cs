@@ -13,10 +13,10 @@ public partial class MainWindow
     private Task? _previewInitialization;
 
     private void OpenObservationControl_Click(object sender, RoutedEventArgs e) =>
-        ShowToolWindow("control", "观战登录", ObservationControlContent, 760, 640);
+        ShowToolWindow("control", "观战登录", ObservationControlContent, 760, 820);
 
     private void OpenObservationMode_Click(object sender, RoutedEventArgs e) =>
-        ShowToolWindow("mode", "延迟/实时观战", ObservationModeContent, 560, 370);
+        ShowToolWindow("mode", "延迟/实时观战", ObservationModeContent, 560, 440);
 
     private void OpenReports_Click(object sender, RoutedEventArgs e) =>
         ShowToolWindow("reports", "对局记录", ReportsContent, 980, 740);
@@ -49,7 +49,7 @@ public partial class MainWindow
             ContentTemplate = (DataTemplate)FindResource("PlayerDetailsTemplate"),
             HorizontalContentAlignment = HorizontalAlignment.Stretch
         };
-        ShowToolWindow($"player-{editor.Seat}", $"{editor.SeatLabel}设置", content, 780, 450);
+        ShowToolWindow($"player-{editor.Seat}", $"{editor.SeatLabel}设置", content, 780, 600);
     }
 
     private void ShowToolWindow(
@@ -71,20 +71,44 @@ public partial class MainWindow
                     VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                     HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled
                 };
+            var shell = new Grid();
+            shell.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            shell.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            if (!floatingPreview)
+            {
+                var heading = new StackPanel { Margin = new Thickness(0, 0, 0, 22) };
+                heading.Children.Add(new TextBlock { Text = title, FontSize = 22, FontWeight = FontWeights.SemiBold });
+                var description = key switch
+                {
+                    "control" => "登录后输入大会 ID，选择要观战的对局。",
+                    "mode" => "选择下一场的观战方式，设置 OBS 画面的播出延迟。",
+                    "reports" => "查看已收到的逐局结算，保存或打开详细报告。",
+                    _ => "调整选手资料与头像效果，完成后点击确认修改。"
+                };
+                heading.Children.Add(new TextBlock { Text = description, Margin = new Thickness(0, 7, 0, 0),
+                    Foreground = (System.Windows.Media.Brush)FindResource("AppMutedTextBrush"), TextWrapping = TextWrapping.Wrap });
+                shell.Children.Add(heading);
+            }
+            Grid.SetRow(body, 1);
+            shell.Children.Add(body);
             window = new Window
             {
                 Title = $"{title} · 0.292 测试版",
                 Owner = this,
                 Width = width,
                 Height = height,
-                MinWidth = floatingPreview ? 480 : 460,
+                MinWidth = floatingPreview ? 480 : key == "reports" ? 720 : key == "control" ? 600 : key.StartsWith("player-") ? 680 : 480,
                 MinHeight = floatingPreview ? 320 : 280,
                 Background = Background,
+                FontFamily = FontFamily,
+                FontSize = FontSize,
+                UseLayoutRounding = true,
+                SnapsToDevicePixels = true,
                 Foreground = Foreground,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
                 ShowInTaskbar = false,
                 Topmost = floatingPreview,
-                Content = new Border { Padding = new Thickness(16), Child = body }
+                Content = new Border { Padding = new Thickness(floatingPreview ? 16 : 24), Child = shell }
             };
             var toolWindow = window;
             if (floatingPreview)
