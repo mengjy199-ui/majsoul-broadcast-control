@@ -417,15 +417,21 @@ public partial class MainWindow : Window
         UpdateObs(display);
     }
 
+    private void UpdateConnectionIndicator()
+    {
+        var connected = _apiConnectionAvailable && _isAuthenticated;
+        ApiStatusText.Text = connected ? "已连接" : "未连接";
+        ConnectionIndicator.Fill = connected
+            ? System.Windows.Media.Brushes.LimeGreen
+            : System.Windows.Media.Brushes.IndianRed;
+    }
+
     private void UpdateStatusOnly(LiveDisplayState display)
     {
         var scoreUpdate = display.LastScoreUpdateUnixMs > 0
             ? DateTimeOffset.FromUnixTimeMilliseconds(display.LastScoreUpdateUnixMs).LocalDateTime.ToString("HH:mm:ss")
             : "等待变化";
-        ApiStatusText.Text = _apiConnectionAvailable ? "已连接" : "未连接";
-        ConnectionIndicator.Fill = _apiConnectionAvailable
-            ? System.Windows.Media.Brushes.LimeGreen
-            : System.Windows.Media.Brushes.IndianRed;
+        UpdateConnectionIndicator();
         ApiDataStatusText.Text = display.IsObserving
             ? $"数据：{display.RoundLabel}　{display.Honba} 本场　{display.RiichiSticks} 供托　分数更新 {scoreUpdate}"
             : "数据：尚未收到有效观战画面，继续保留最后一次选手资料";

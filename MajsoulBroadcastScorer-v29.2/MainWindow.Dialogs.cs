@@ -110,6 +110,7 @@ public partial class MainWindow
             AccountStatusText.Text = "雀魂账号：未登录";
         }
         LoginRequiredText.Visibility = authenticated ? Visibility.Collapsed : Visibility.Visible;
+        UpdateConnectionIndicator();
         UpdateControlButtons();
     }
 
