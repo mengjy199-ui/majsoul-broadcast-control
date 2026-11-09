@@ -28,7 +28,8 @@ public enum OverlayLayoutStyle
     VerticalAvatar,
     GapConditions,
     TeamMode,
-    VerticalMatch
+    VerticalMatch,
+    FrierenVerticalAvatar
 }
 
 public enum VerticalNameContent { PlayerName, TeamName }

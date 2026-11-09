@@ -108,6 +108,7 @@ public partial class MainWindow : Window
         OverlayStyleComboBox.SelectedValue = _stylePublication.PreviewStyle switch
         {
             OverlayLayoutStyle.VerticalAvatar => "竖排头像",
+            OverlayLayoutStyle.FrierenVerticalAvatar => "竖排头像·芙莉莲",
             OverlayLayoutStyle.VerticalMatch => "竖排头像·赛事展示",
             OverlayLayoutStyle.TeamMode => "队伍模式",
             OverlayLayoutStyle.GapConditions => "分差与逆转",
@@ -462,6 +463,7 @@ public partial class MainWindow : Window
     private static string StyleName(OverlayLayoutStyle style) => style switch
     {
         OverlayLayoutStyle.VerticalAvatar => "竖排头像",
+            OverlayLayoutStyle.FrierenVerticalAvatar => "竖排头像·芙莉莲",
         OverlayLayoutStyle.VerticalMatch => "竖排头像·赛事展示",
         OverlayLayoutStyle.TeamMode => "队伍模式",
         OverlayLayoutStyle.GapConditions => "分差与逆转",
@@ -890,6 +892,7 @@ public partial class MainWindow : Window
         var selectedStyle = value switch
         {
             "竖排头像" => OverlayLayoutStyle.VerticalAvatar,
+            "竖排头像·芙莉莲" => OverlayLayoutStyle.FrierenVerticalAvatar,
             "竖排头像·赛事展示" => OverlayLayoutStyle.VerticalMatch,
             "队伍模式" => OverlayLayoutStyle.TeamMode,
             "分差与逆转" => OverlayLayoutStyle.GapConditions,
@@ -1181,6 +1184,7 @@ public partial class MainWindow : Window
         var paths = new Dictionary<string, string?>
         {
             ["art-avatar-frame"] = Path.Combine(AppContext.BaseDirectory, "Assets", "Overlay", "mint-avatar-frame.png"),
+            ["art-frieren-avatar-frame"] = Path.Combine(AppContext.BaseDirectory, "Assets", "Overlay", "frieren-avatar-frame.png"),
             ["art-name-divider"] = Path.Combine(AppContext.BaseDirectory, "Assets", "Overlay", "mint-name-divider.png"),
             ["left-board"] = _settingsStore.ResolveAsset(_settings.LeftBoardPath),
             ["logo"] = _settingsStore.ResolveAsset(_settings.LogoPath),
@@ -1288,6 +1292,7 @@ public partial class MainWindow : Window
             style switch
             {
                 OverlayLayoutStyle.VerticalAvatar => "verticalAvatar",
+                OverlayLayoutStyle.FrierenVerticalAvatar => "frierenVerticalAvatar",
                 OverlayLayoutStyle.VerticalMatch => "verticalMatch",
                 OverlayLayoutStyle.TeamMode => "teamMode",
                 OverlayLayoutStyle.GapConditions => "gapConditions",
