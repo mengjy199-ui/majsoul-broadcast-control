@@ -1,0 +1,307 @@
+<Window x:Class="MajsoulBroadcastScorer.V27.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        Title="雀魂直播控制中心 v29.2 · 赛事展示版" Width="1520" Height="940"
+        MinWidth="1200" MinHeight="760" Background="#090B0F" Foreground="#F5F7FA">
+  <Window.Resources>
+    <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+  </Window.Resources>
+  <Grid Margin="14">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+
+    <Border Grid.Row="0" Background="#11151B" BorderBrush="#2E3642" BorderThickness="1" CornerRadius="12" Padding="12" Margin="0,0,0,12">
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <StackPanel>
+          <TextBlock x:Name="ApiStatusText" FontSize="15" FontWeight="SemiBold" Text="观战 API：正在启动" />
+          <TextBlock x:Name="ApiDataStatusText" Margin="0,3,0,0" Foreground="#AAB3C0" Text="数据：等待首个观战快照" />
+          <TextBlock x:Name="ObsStatusText" Margin="0,4,0,0" Text="OBS 服务：http://127.0.0.1:17657/overlay" />
+        </StackPanel>
+        <Button Grid.Column="1" Content="复制 OBS 地址" Click="CopyObsUrl_Click" VerticalAlignment="Center" />
+      </Grid>
+    </Border>
+
+    <Grid Grid.Row="1">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="*" />
+        <RowDefinition Height="Auto" />
+      </Grid.RowDefinitions>
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="520" />
+        <ColumnDefinition Width="14" />
+        <ColumnDefinition Width="*" />
+      </Grid.ColumnDefinitions>
+
+      <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto">
+        <StackPanel>
+          <GroupBox Header="观战控制" Margin="0,0,0,10" Padding="10">
+            <StackPanel>
+              <TextBlock x:Name="BackendStatusText" FontWeight="SemiBold" Text="观战后台：正在启动" />
+              <TextBlock x:Name="AccountStatusText" Margin="0,3,0,8" Foreground="#AAB3C0" Text="雀魂账号：未登录" />
+              <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="74"/><ColumnDefinition Width="*"/><ColumnDefinition Width="74"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                <TextBlock Text="账号" VerticalAlignment="Center"/>
+                <TextBox x:Name="AccountNameTextBox" Grid.Column="1" Margin="0,0,8,0" />
+                <TextBlock Grid.Column="2" Text="密码" VerticalAlignment="Center"/>
+                <PasswordBox x:Name="PasswordInput" Grid.Column="3" />
+              </Grid>
+              <WrapPanel Margin="74,6,0,10">
+                <Button x:Name="LoginButton" Content="登录" Click="Login_Click" Padding="16,4" />
+                <Button x:Name="LogoutButton" Content="退出登录" Click="Logout_Click" Margin="8,0,0,0" Padding="16,4" />
+              </WrapPanel>
+              <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="74"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <TextBlock Text="大会 ID" VerticalAlignment="Center"/>
+                <TextBox x:Name="ContestIdTextBox" Grid.Column="1" />
+                <Button x:Name="FetchGamesButton" Grid.Column="2" Content="获取对局" Click="FetchGames_Click" Margin="8,0,0,0" Padding="14,4" />
+              </Grid>
+              <ListBox x:Name="ContestGamesList" Height="104" Margin="74,7,0,7" DisplayMemberPath="Label" />
+              <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="74"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <TextBlock Text="观战方式" VerticalAlignment="Center"/>
+                <ComboBox x:Name="ObserveModeComboBox" Grid.Column="1" SelectedIndex="0">
+                  <ComboBoxItem Content="延迟观战" Tag="delayed"/>
+                  <ComboBoxItem Content="实时观战" Tag="realtime"/>
+                </ComboBox>
+                <Button x:Name="StartObserveButton" Grid.Column="2" Content="开始观战" Click="StartObserve_Click" Margin="8,0,0,0" Padding="14,4" />
+                <Button x:Name="StopObserveButton" Grid.Column="3" Content="停止" Click="StopObserve_Click" Margin="8,0,0,0" Padding="14,4" />
+              </Grid>
+              <TextBlock x:Name="ControlStatusText" Margin="74,7,0,0" Foreground="#AAB3C0" TextWrapping="Wrap" />
+            </StackPanel>
+          </GroupBox>
+
+          <GroupBox Header="播出延迟" Margin="0,0,0,10" Padding="8">
+            <StackPanel>
+              <WrapPanel>
+                <TextBlock Text="延迟时间（0～30 秒）" VerticalAlignment="Center" />
+                <TextBox x:Name="ApiDelayTextBox" Width="64" Margin="8,0,0,0" TextChanged="ApiDelayText_Changed" />
+                <Button x:Name="ApplyApiDelayButton" Content="延迟已应用" Margin="6,0,0,0" Padding="10,3" Click="ApplyApiDelay_Click" IsEnabled="False" />
+              </WrapPanel>
+              <TextBlock x:Name="ApiDelayStatusText" Margin="0,6,0,0" Foreground="#AAB3C0" TextWrapping="Wrap" />
+            </StackPanel>
+          </GroupBox>
+
+          <GroupBox Header="对局记录" Margin="0,0,0,10" Padding="8">
+            <StackPanel>
+              <TextBlock x:Name="ReportStatusText" Foreground="#AAB3C0" TextWrapping="Wrap"
+                         Text="等待新对局；报告保存在程序目录的 reports 文件夹。" />
+              <WrapPanel Margin="0,7,0,0">
+                <Button Content="保存当前报告" Click="SaveCurrentReport_Click" />
+                <Button Content="打开报告目录" Click="OpenReportsFolder_Click" Margin="7,3,3,3" />
+              </WrapPanel>
+            </StackPanel>
+          </GroupBox>
+
+          <GroupBox Header="OBS 样式" Margin="0,0,0,10" Padding="8">
+            <Grid>
+              <Grid.ColumnDefinitions><ColumnDefinition Width="90"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+              <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+              <TextBlock Text="选手排版" VerticalAlignment="Center" />
+              <ComboBox x:Name="OverlayStyleComboBox" Grid.Column="1" SelectedValuePath="Content" SelectionChanged="OverlayStyle_Changed">
+                <ComboBoxItem Content="横排选手卡"/>
+                <ComboBoxItem Content="竖排头像"/>
+                <ComboBoxItem Content="竖排头像·赛事展示"/>
+                <ComboBoxItem Content="队伍模式"/>
+                <ComboBoxItem Content="分差与逆转"/>
+              </ComboBox>
+              <StackPanel Grid.Row="1" Grid.ColumnSpan="2" Margin="90,7,0,0">
+                <Button x:Name="ConfirmOverlayStyleButton"
+                        Content="确认切换到 OBS"
+                        Click="ConfirmOverlayStyle_Click"
+                        Padding="12,5"
+                        HorizontalAlignment="Left"
+                        Visibility="Collapsed" />
+                <TextBlock x:Name="OverlayStyleStatusText" Margin="0,5,0,0" Foreground="#AAB3C0" TextWrapping="Wrap" />
+              </StackPanel>
+            </Grid>
+          </GroupBox>
+
+          <GroupBox x:Name="VerticalMatchSettingsGroup" Header="竖排头像·赛事展示" Margin="0,0,0,10" Padding="8">
+            <Grid>
+              <Grid.ColumnDefinitions><ColumnDefinition Width="90"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+              <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+              <TextBlock Text="名称内容" VerticalAlignment="Center"/>
+              <ComboBox x:Name="VerticalNameComboBox" Grid.Column="1" SelectedValuePath="Content" SelectionChanged="VerticalContent_Changed">
+                <ComboBoxItem Content="所属队伍"/><ComboBoxItem Content="选手姓名"/>
+              </ComboBox>
+              <TextBlock Grid.Row="1" Text="数值内容" VerticalAlignment="Center"/>
+              <ComboBox x:Name="VerticalNumberComboBox" Grid.Row="1" Grid.Column="1" SelectedValuePath="Content" SelectionChanged="VerticalContent_Changed">
+                <ComboBoxItem Content="当前分数（持有点数）"/><ComboBoxItem Content="精算点"/>
+              </ComboBox>
+              <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Margin="0,6,0,0" Foreground="#AAB3C0" TextWrapping="Wrap" Text="先在右侧预览，再点击确认同步 OBS。当前分数直接跟随 API，不受精算点开关影响。"/>
+            </Grid>
+          </GroupBox>
+
+          <GroupBox x:Name="GapSettingsGroup" Header="分差与逆转设置" Margin="0,0,0,10" Padding="8">
+            <Grid>
+              <Grid.ColumnDefinitions><ColumnDefinition Width="90"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+              <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+              <TextBlock Text="展示选手" VerticalAlignment="Center" />
+              <ComboBox x:Name="GapPlayerComboBox" Grid.Column="1" SelectedValuePath="Tag" SelectionChanged="GapSettings_Changed" />
+              <TextBlock Grid.Row="1" Text="计算目标" VerticalAlignment="Center" />
+              <ComboBox x:Name="GapTargetComboBox" Grid.Row="1" Grid.Column="1" SelectedValuePath="Content" SelectionChanged="GapSettings_Changed">
+                <ComboBoxItem Content="逆转上一位"/>
+                <ComboBoxItem Content="逆转前二"/>
+                <ComboBoxItem Content="逆转一位"/>
+              </ComboBox>
+              <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Margin="0,6,0,0" Foreground="#AAB3C0" TextWrapping="Wrap"
+                         Text="达到目标后继续显示掉位警戒；三家的自摸条件合并显示。" />
+            </Grid>
+          </GroupBox>
+
+          <GroupBox x:Name="EventCopyGroup" Header="赛事文案" Margin="0,0,0,10" Padding="8">
+            <Grid>
+              <Grid.ColumnDefinitions><ColumnDefinition Width="90"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+              <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+              <TextBlock Text="部门" VerticalAlignment="Center" />
+              <TextBox x:Name="DepartmentTextBox" Grid.Column="1" TextChanged="TextSettings_Changed" />
+              <TextBlock Grid.Row="1" Text="当前回战" VerticalAlignment="Center" />
+              <TextBox x:Name="MatchTextBox" Grid.Row="1" Grid.Column="1" TextChanged="TextSettings_Changed" />
+            </Grid>
+          </GroupBox>
+
+          <GroupBox x:Name="LiveAssetsGroup" Header="直播素材" Margin="0,0,0,10" Padding="8">
+            <StackPanel>
+              <WrapPanel>
+                <Button Content="上传左侧底板" Tag="left-board" Click="UploadAsset_Click"/>
+                <Button Content="重置取景" Tag="left-board" Click="ResetAssetPosition_Click" Margin="6,0,0,0"/>
+                <TextBlock x:Name="LeftBoardStatus" VerticalAlignment="Center"/>
+              </WrapPanel>
+              <TextBlock Margin="4,6,0,2" Text="左侧底板取景焦点（决定裁切时显示哪一部分）" />
+              <Grid Margin="4,0,4,8">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="42"/><ColumnDefinition Width="*"/><ColumnDefinition Width="48"/></Grid.ColumnDefinitions>
+                <Grid.RowDefinitions><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
+                <TextBlock Text="水平" VerticalAlignment="Center"/>
+                <Slider x:Name="LeftBoardFocusXSlider" Grid.Column="1" Minimum="0" Maximum="100" TickFrequency="5" ValueChanged="LeftBoardFocus_Changed" PreviewMouseLeftButtonUp="LeftBoardFocus_Commit" LostFocus="LeftBoardFocus_Commit"/>
+                <TextBlock x:Name="LeftBoardFocusXValue" Grid.Column="2" TextAlignment="Right" VerticalAlignment="Center"/>
+                <TextBlock Grid.Row="1" Text="垂直" VerticalAlignment="Center"/>
+                <Slider x:Name="LeftBoardFocusYSlider" Grid.Row="1" Grid.Column="1" Minimum="0" Maximum="100" TickFrequency="5" ValueChanged="LeftBoardFocus_Changed" PreviewMouseLeftButtonUp="LeftBoardFocus_Commit" LostFocus="LeftBoardFocus_Commit"/>
+                <TextBlock x:Name="LeftBoardFocusYValue" Grid.Row="1" Grid.Column="2" TextAlignment="Right" VerticalAlignment="Center"/>
+              </Grid>
+              <WrapPanel>
+                <Button Content="上传 Logo" Tag="logo" Click="UploadAsset_Click"/>
+                <Button Content="重置位置" Tag="logo" Click="ResetAssetPosition_Click" Margin="6,0,0,0"/>
+                <TextBlock x:Name="LogoStatus" VerticalAlignment="Center"/>
+              </WrapPanel>
+              <TextBlock Margin="4,6,0,2" Text="Logo 布局（X / Y / 宽 / 高）" />
+              <WrapPanel>
+                <TextBox x:Name="LogoX" Width="72" TextChanged="LayoutText_Changed"/><TextBox x:Name="LogoY" Width="72" TextChanged="LayoutText_Changed"/>
+                <TextBox x:Name="LogoW" Width="72" TextChanged="LayoutText_Changed"/><TextBox x:Name="LogoH" Width="72" TextChanged="LayoutText_Changed"/>
+                <CheckBox x:Name="LogoLock" Content="锁定比例" Checked="LayoutText_Changed" Unchecked="LayoutText_Changed"/>
+              </WrapPanel>
+              <WrapPanel Margin="0,8,0,0">
+                <Button Content="上传左下图片" Tag="bottom-left" Click="UploadAsset_Click"/>
+                <Button Content="重置位置" Tag="bottom-left" Click="ResetAssetPosition_Click" Margin="6,0,0,0"/>
+                <TextBlock x:Name="BottomLeftStatus" VerticalAlignment="Center"/>
+              </WrapPanel>
+              <TextBlock Margin="4,6,0,2" Text="左下图片布局（X / Y / 宽 / 高）" />
+              <WrapPanel>
+                <TextBox x:Name="BottomX" Width="72" TextChanged="LayoutText_Changed"/><TextBox x:Name="BottomY" Width="72" TextChanged="LayoutText_Changed"/>
+                <TextBox x:Name="BottomW" Width="72" TextChanged="LayoutText_Changed"/><TextBox x:Name="BottomH" Width="72" TextChanged="LayoutText_Changed"/>
+                <CheckBox x:Name="BottomLock" Content="锁定比例（默认关闭）" Checked="LayoutText_Changed" Unchecked="LayoutText_Changed"/>
+              </WrapPanel>
+              <TextBlock Margin="4,4,0,0" Foreground="#AAB3C0" Text="Logo 和左下图片也可直接在右侧预览中拖动。" />
+            </StackPanel>
+          </GroupBox>
+
+          <StackPanel Orientation="Horizontal" Margin="4,0,0,10">
+            <CheckBox x:Name="ShowTotalCheckBox" Content="显示四名选手精算点" FontWeight="SemiBold" Checked="ShowTotal_Changed" Unchecked="ShowTotal_Changed" VerticalAlignment="Center" />
+            <Button Content="按当前结果填入下一场累计"
+                    Click="StageProjectedTotals_Click"
+                    ToolTip="只填入待确认草稿，不会立即同步到 OBS"
+                    Margin="14,0,0,0"
+                    Padding="12,4" />
+          </StackPanel>
+
+          <ItemsControl x:Name="PlayerEditorsControl">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Border BorderBrush="#303946" BorderThickness="1" CornerRadius="12" Padding="10" Margin="0,0,0,10" Background="#11151B">
+                  <StackPanel>
+                    <TextBlock Text="{Binding SeatLabel}" FontSize="16" FontWeight="Bold" Margin="3,0,0,5" />
+                    <Grid>
+                      <Grid.ColumnDefinitions><ColumnDefinition Width="72"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                      <Grid.RowDefinitions><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
+                      <TextBlock Text="姓名" VerticalAlignment="Center"/><TextBox Grid.Column="1" Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"/><TextBlock Grid.Column="2" Text="{Binding NameSource}" VerticalAlignment="Center" Margin="5"/><Button Grid.Column="3" Content="恢复 API" Tag="name" Click="RestoreApi_Click"/>
+                      <TextBlock Grid.Row="1" Text="分数" VerticalAlignment="Center"/><TextBox Grid.Row="1" Grid.Column="1" Text="{Binding Score, UpdateSourceTrigger=PropertyChanged}"/><TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding ScoreSource}" VerticalAlignment="Center" Margin="5"/><Button Grid.Row="1" Grid.Column="3" Content="恢复 API" Tag="score" Click="RestoreApi_Click"/>
+                      <TextBlock Grid.Row="2" Text="座位风" VerticalAlignment="Center"/><ComboBox Grid.Row="2" Grid.Column="1" SelectedValuePath="Content" SelectedValue="{Binding Wind, UpdateSourceTrigger=PropertyChanged}"><ComboBoxItem Content="东"/><ComboBoxItem Content="南"/><ComboBoxItem Content="西"/><ComboBoxItem Content="北"/><ComboBoxItem Content="?"/></ComboBox><TextBlock Grid.Row="2" Grid.Column="2" Text="{Binding WindSource}" VerticalAlignment="Center" Margin="5"/><Button Grid.Row="2" Grid.Column="3" Content="恢复 API" Tag="wind" Click="RestoreApi_Click"/>
+                      <TextBlock Grid.Row="3" Text="所属队伍" VerticalAlignment="Center"/><TextBox Grid.Row="3" Grid.Column="1" Text="{Binding TeamName, UpdateSourceTrigger=PropertyChanged}"/><TextBlock Grid.Row="3" Grid.Column="2" Text="{Binding TeamSource}" VerticalAlignment="Center" Margin="5"/><Button Grid.Row="3" Grid.Column="3" Content="恢复 API" Tag="team" Click="RestoreApi_Click"/>
+                      <TextBlock Grid.Row="4" Text="START" VerticalAlignment="Center"/><TextBox Grid.Row="4" Grid.Column="1" Text="{Binding Total, UpdateSourceTrigger=PropertyChanged}"/><TextBlock Grid.Row="4" Grid.Column="2" Grid.ColumnSpan="2" Text="此前累计精算点；确认后播出" VerticalAlignment="Center" Margin="5"/>
+                      <TextBlock Grid.Row="5" Text="立直红框" VerticalAlignment="Center"/><ComboBox Grid.Row="5" Grid.Column="1" SelectedValuePath="Content" SelectedValue="{Binding RiichiMode, UpdateSourceTrigger=PropertyChanged}"><ComboBoxItem Content="自动跟随 API"/><ComboBoxItem Content="强制 ON"/><ComboBoxItem Content="强制 OFF"/></ComboBox>
+                      <Grid Grid.Row="6" Grid.ColumnSpan="4"
+                            Visibility="{Binding ShowAvatarControls, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="72"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <TextBlock Text="头像区域" VerticalAlignment="Center"/>
+                        <ComboBox Grid.Column="1" SelectedValuePath="Content" SelectedValue="{Binding AvatarMode, UpdateSourceTrigger=PropertyChanged}"><ComboBoxItem Content="上传图片"/><ComboBoxItem Content="透明摄像头槽"/></ComboBox>
+                        <Button Grid.Column="2" Content="上传头像" Click="UploadAvatar_Click"/>
+                        <TextBlock Grid.Column="3" Text="{Binding AvatarStatus}" VerticalAlignment="Center" Margin="5"/>
+                      </Grid>
+                      <Grid Grid.Row="7" Grid.ColumnSpan="4"
+                            Visibility="{Binding ShowAvatarControls, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="72"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <TextBlock Text="头像框" VerticalAlignment="Center"/>
+                        <ComboBox Grid.Column="1" SelectedValuePath="Content" SelectedValue="{Binding AvatarFrameMode, UpdateSourceTrigger=PropertyChanged}">
+                          <ComboBoxItem Content="默认边框"/>
+                          <ComboBoxItem Content="自定义头像框"/>
+                          <ComboBoxItem Content="隐藏头像框"/>
+                        </ComboBox>
+                        <Button Grid.Column="2" Content="上传头像框" Click="UploadAvatarFrame_Click"/>
+                        <TextBlock Grid.Column="3" Text="{Binding AvatarFrameStatus}" VerticalAlignment="Center" Margin="5"/>
+                      </Grid>
+                    </Grid>
+                  </StackPanel>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </ScrollViewer>
+
+      <Border Grid.Row="1" Grid.Column="0" Margin="0,10,0,0" Padding="10"
+              BorderBrush="#303946" BorderThickness="1" CornerRadius="12" Background="#11151B">
+        <StackPanel>
+          <TextBlock x:Name="PlayerInputStatusText" Foreground="#FF8A80" TextWrapping="Wrap" Margin="2,0,2,6" />
+          <Grid>
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="12"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+            <Button x:Name="ApplyPlayerChangesButton"
+                    Content="选手资料已同步"
+                    Click="ApplyPlayerChanges_Click"
+                    IsEnabled="False"
+                    FontWeight="Bold"
+                    Padding="12,7" />
+            <Button x:Name="ApplyTotalsButton" Grid.Column="2" Content="精算点已同步"
+                    Click="ApplyTotals_Click" IsEnabled="False" FontWeight="Bold" Padding="12,7" />
+          </Grid>
+        </StackPanel>
+      </Border>
+
+      <Grid Grid.Column="2" Grid.RowSpan="2">
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+        <TextBlock Text="1920 × 1080 OBS 实时预览" FontSize="17" FontWeight="Bold" Margin="0,0,0,8" />
+        <Border Grid.Row="1" BorderBrush="#909090" BorderThickness="1" Background="#333840">
+          <Grid x:Name="PreviewHost" SizeChanged="PreviewHost_SizeChanged">
+            <wv2:WebView2 x:Name="PreviewWebView"
+                          HorizontalAlignment="Center"
+                          VerticalAlignment="Center" />
+            <TextBlock x:Name="PreviewErrorText"
+                       Visibility="Collapsed"
+                       Foreground="White"
+                       Background="#CC20242A"
+                       TextAlignment="Center"
+                       TextWrapping="Wrap"
+                       Padding="24"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center" />
+          </Grid>
+        </Border>
+      </Grid>
+    </Grid>
+  </Grid>
+</Window>

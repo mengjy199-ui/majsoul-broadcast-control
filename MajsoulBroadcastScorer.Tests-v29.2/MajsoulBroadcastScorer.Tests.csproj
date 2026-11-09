@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\MajsoulBroadcastScorer.Core-v29.2\MajsoulBroadcastScorer.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\MajsoulBroadcastScorer-v29.2\Services\SettingsStore.cs" Link="Services\SettingsStore.cs" />
+    <Compile Include="..\MajsoulBroadcastScorer-v29.2\Services\ObsOverlayPage.cs" Link="Services\ObsOverlayPage.cs" />
+    <Compile Include="..\MajsoulBroadcastScorer-v29.2\Services\ObsOverlayServer.cs" Link="Services\ObsOverlayServer.cs" />
+    <Compile Include="..\MajsoulBroadcastScorer-v29.2\Services\ClipboardRetry.cs" Link="Services\ClipboardRetry.cs" />
+  </ItemGroup>
+</Project>
