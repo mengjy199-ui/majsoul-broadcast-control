@@ -32,11 +32,11 @@ public sealed class SettingsStoreTests : IDisposable
         Assert.Equal(30100, loaded.Players[1].ManualScore);
         Assert.Equal("referee@example.com", loaded.AccountName);
         Assert.Equal("123456", loaded.ContestId);
-        Assert.EndsWith("v29.2-settings.json", store.SettingsPath);
+        Assert.EndsWith("v0.292-settings.json", store.SettingsPath);
     }
 
     [Fact]
-    public async Task LoadLegacyV29Settings_SavesAsV291WithoutOverwritingOriginal()
+    public async Task LoadLegacyV29Settings_SavesAsBetaWithoutOverwritingOriginal()
     {
         Directory.CreateDirectory(_directory);
         var legacyPath = Path.Combine(_directory, "v29-settings.json");
@@ -94,6 +94,29 @@ public sealed class SettingsStoreTests : IDisposable
         var store = new SettingsStore(_directory);
 
         await Assert.ThrowsAsync<InvalidDataException>(() => store.ImportAssetAsync(source, "avatar-0"));
+    }
+
+    [Fact]
+    public void MalformedAssetPathIsUnavailableInsteadOfBreakingStartup()
+    {
+        var store = new SettingsStore(_directory);
+        Assert.Null(store.ResolveAsset("assets/\0broken.png"));
+    }
+
+    [Fact]
+    public async Task V292LegacyFileStaysUntouchedWhenSavingBeta()
+    {
+        Directory.CreateDirectory(_directory);
+        var legacy = Path.Combine(_directory, "v29.2-settings.json");
+        var original = V27SettingsJson.Serialize(new V27Settings { Department = "旧版设置" });
+        await File.WriteAllTextAsync(legacy, original);
+        var store = new SettingsStore(_directory);
+        var loaded = await store.LoadAsync();
+        Assert.Equal("旧版设置", loaded.Department);
+        loaded.Department = "测试版设置";
+        await store.SaveAsync(loaded);
+        Assert.Equal(original, await File.ReadAllTextAsync(legacy));
+        Assert.Equal("测试版设置", (await store.LoadAsync()).Department);
     }
 
     public void Dispose()

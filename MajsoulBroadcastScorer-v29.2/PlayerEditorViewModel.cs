@@ -30,6 +30,7 @@ public sealed class PlayerEditorViewModel : INotifyPropertyChanged
     }
 
     public int Seat { get; }
+    public override string ToString() => SeatLabel;
     public string SeatLabel => $"选手 {Seat + 1}";
     public Action<PlayerEditorViewModel, string> Changed { get; }
     public string Name { get => _name; set => Set(ref _name, value); }

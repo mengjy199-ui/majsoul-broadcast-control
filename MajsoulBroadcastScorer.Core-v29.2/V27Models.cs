@@ -371,6 +371,14 @@ public sealed class TotalPointsDraft
 {
     private readonly decimal[] _values = new decimal[4];
     private readonly bool[] _dirty = new bool[4];
+    private int _revision;
+    internal int Revision => _revision;
+    internal void AcceptIfUnchanged(int revision)
+    {
+        if (_revision != revision) return;
+        Array.Fill(_dirty, false);
+        _revision++;
+    }
 
     public TotalPointsDraft(V27Settings settings)
     {
@@ -388,6 +396,7 @@ public sealed class TotalPointsDraft
         seat = ValidateSeat(seat);
         _values[seat] = Math.Round(value, 1);
         _dirty[seat] = true;
+        _revision++;
     }
 
     public void SetAll(IReadOnlyDictionary<int, decimal> values)
@@ -402,14 +411,18 @@ public sealed class TotalPointsDraft
 
     public bool IsDirty(int seat) => _dirty[ValidateSeat(seat)];
 
-    public void Apply(V27Settings settings)
+    public void Apply(V27Settings settings) => ApplyTo(settings, true);
+
+    public void CopyTo(V27Settings settings) => ApplyTo(settings, false);
+
+    private void ApplyTo(V27Settings settings, bool clearDraft)
     {
         settings.Normalize();
         foreach (var player in settings.Players)
         {
             if (_dirty[player.Seat])
                 player.TotalPoints = _values[player.Seat];
-            _dirty[player.Seat] = false;
+            if (clearDraft) _dirty[player.Seat] = false;
         }
     }
 
@@ -421,6 +434,14 @@ public sealed class TotalPointsDraft
 public sealed class PlayerPresentationDraft
 {
     private readonly Slot[] _slots = Enumerable.Range(0, 4).Select(_ => new Slot()).ToArray();
+    private int _revision;
+    internal int Revision => _revision;
+    internal void AcceptIfUnchanged(int revision)
+    {
+        if (_revision != revision) return;
+        for (var seat = 0; seat < _slots.Length; seat++) _slots[seat] = new Slot();
+        _revision++;
+    }
 
     public bool HasPendingChanges => _slots.Any(slot =>
         slot.NameDirty || slot.ScoreDirty || slot.AvatarDirty || slot.AvatarFrameDirty || slot.TeamNameDirty);
@@ -481,6 +502,7 @@ public sealed class PlayerPresentationDraft
     public void StageName(int seat, string value)
     {
         var slot = SlotAt(seat);
+        _revision++;
         slot.Name = value;
         slot.NameDirty = true;
         slot.RestoreNameFromApi = false;
@@ -489,6 +511,7 @@ public sealed class PlayerPresentationDraft
     public void StageScore(int seat, int value)
     {
         var slot = SlotAt(seat);
+        _revision++;
         slot.Score = value;
         slot.ScoreDirty = true;
         slot.RestoreScoreFromApi = false;
@@ -497,6 +520,7 @@ public sealed class PlayerPresentationDraft
     public void StageRestoreName(int seat)
     {
         var slot = SlotAt(seat);
+        _revision++;
         slot.NameDirty = true;
         slot.RestoreNameFromApi = true;
     }
@@ -504,6 +528,7 @@ public sealed class PlayerPresentationDraft
     public void StageRestoreScore(int seat)
     {
         var slot = SlotAt(seat);
+        _revision++;
         slot.ScoreDirty = true;
         slot.RestoreScoreFromApi = true;
     }
@@ -511,6 +536,7 @@ public sealed class PlayerPresentationDraft
     public void StageAvatarPath(int seat, string path)
     {
         var slot = SlotAt(seat);
+        _revision++;
         slot.AvatarPath = path;
         slot.AvatarDirty = true;
     }
@@ -518,6 +544,7 @@ public sealed class PlayerPresentationDraft
     public void StageAvatarMode(int seat, AvatarDisplayMode mode)
     {
         var slot = SlotAt(seat);
+        _revision++;
         slot.AvatarMode = mode;
         slot.AvatarDirty = true;
     }
@@ -525,6 +552,7 @@ public sealed class PlayerPresentationDraft
     public void StageAvatarFramePath(int seat, string path)
     {
         var slot = SlotAt(seat);
+        _revision++;
         slot.AvatarFramePath = path;
         slot.AvatarFrameDirty = true;
     }
@@ -532,6 +560,7 @@ public sealed class PlayerPresentationDraft
     public void StageAvatarFrameMode(int seat, AvatarFrameDisplayMode mode)
     {
         var slot = SlotAt(seat);
+        _revision++;
         slot.AvatarFrameMode = mode;
         slot.AvatarFrameDirty = true;
     }
@@ -539,6 +568,7 @@ public sealed class PlayerPresentationDraft
     public void StageTeamName(int seat, string value)
     {
         var slot = SlotAt(seat);
+        _revision++;
         slot.TeamName = value;
         slot.TeamNameDirty = true;
         slot.RestoreTeamFromApi = false;
@@ -547,11 +577,16 @@ public sealed class PlayerPresentationDraft
     public void StageRestoreTeam(int seat)
     {
         var slot = SlotAt(seat);
+        _revision++;
         slot.TeamNameDirty = true;
         slot.RestoreTeamFromApi = true;
     }
 
-    public void Apply(V27Settings settings)
+    public void Apply(V27Settings settings) => ApplyTo(settings, true);
+
+    public void CopyTo(V27Settings settings) => ApplyTo(settings, false);
+
+    private void ApplyTo(V27Settings settings, bool clearDraft)
     {
         settings.Normalize();
         foreach (var player in settings.Players)
@@ -588,7 +623,7 @@ public sealed class PlayerPresentationDraft
                 player.TeamNameLocked = !slot.RestoreTeamFromApi;
                 if (!slot.RestoreTeamFromApi) player.TeamName = slot.TeamName.Trim();
             }
-            _slots[player.Seat] = new Slot();
+            if (clearDraft) _slots[player.Seat] = new Slot();
         }
     }
 

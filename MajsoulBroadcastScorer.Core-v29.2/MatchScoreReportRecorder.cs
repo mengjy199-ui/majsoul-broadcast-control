@@ -203,10 +203,7 @@ public sealed class MatchScoreReportRecorder : IDisposable
         return builder.ToString();
     }
 
-    private static string Csv(string value) =>
-        value.IndexOfAny([',', '"', '\r', '\n']) >= 0
-            ? $"\"{value.Replace("\"", "\"\"")}\""
-            : value;
+    private static string Csv(string value) => CsvText.Escape(value);
 
     private static void WriteAtomic(string path, string content, Encoding encoding)
     {

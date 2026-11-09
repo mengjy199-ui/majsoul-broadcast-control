@@ -201,6 +201,5 @@ public static class RoundResultFormatter
                value.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined);
     }
 
-    private static string Csv(string value) => value.IndexOfAny([',', '"', '\r', '\n']) >= 0
-        ? "\"" + value.Replace("\"", "\"\"") + "\"" : value;
+    private static string Csv(string value) => CsvText.Escape(value);
 }

@@ -25,17 +25,23 @@ public partial class MainWindow
                 ? DateTimeOffset.FromUnixTimeMilliseconds(state.ServerTime)
                 : DateTimeOffset.Now;
             if (_roundReportRecorder.Observe(observe, timestamp))
-            {
-                _roundReportRows.Clear();
-                foreach (var result in _roundReportRecorder.Results)
-                    _roundReportRows.Add(RoundResultFormatter.CreateRow(result, _roundReportRecorder.Players));
-            }
-            _roundReportError = null;
+                RefreshRoundReportRows();
+            if (!_roundReportRecorder.HasPendingSave) _roundReportError = null;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
-            _roundReportError = "逐局报告未能保存：" + exception.Message;
+            RefreshRoundReportRows();
+            _roundReportError = "逐局报告尚未保存，正在保留数据等待重试：" + exception.Message;
         }
         UpdateReportStatus();
     }
+    private void RefreshRoundReportRows()
+    {
+        _roundReportRows.Clear();
+        foreach (var result in _roundReportRecorder.Results)
+            _roundReportRows.Add(RoundResultFormatter.CreateRow(result, _roundReportRecorder.Players));
+        RoundRecordsEmptyState.Visibility = _roundReportRows.Count == 0
+            ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+    }
+
 }

@@ -106,10 +106,17 @@ public sealed class SettingsStore
     {
         if (string.IsNullOrWhiteSpace(relativePath) || Path.IsPathRooted(relativePath))
             return null;
-        var fullPath = Path.GetFullPath(Path.Combine(_baseDirectory, relativePath));
-        var prefix = _baseDirectory.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
-        if (!fullPath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) || !File.Exists(fullPath))
+        try
+        {
+            var fullPath = Path.GetFullPath(Path.Combine(_baseDirectory, relativePath));
+            var prefix = _baseDirectory.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            if (!fullPath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) || !File.Exists(fullPath))
+                return null;
+            return fullPath;
+        }
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException or IOException)
+        {
             return null;
-        return fullPath;
+        }
     }
 }

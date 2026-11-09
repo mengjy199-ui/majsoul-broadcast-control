@@ -20,7 +20,9 @@ public partial class MainWindow : Window
     private readonly BroadcastApiClient _apiClient;
     private readonly ObsOverlayServer _obsServer;
     private readonly BackendProcessManager _backendManager;
-    private readonly V27Settings _settings;
+    private V27Settings _settings;
+    private bool _savingChanges;
+    private DateTimeOffset? _lastManualSaveAt;
     private readonly OverlayStylePublication _stylePublication;
     private readonly VerticalCardPublication _verticalCardPublication;
     private readonly LiveStateReducer _reducer;
@@ -88,7 +90,7 @@ public partial class MainWindow : Window
         _apiClient.StateChanged += ApiClient_StateChanged;
         _apiClient.AuthChanged += ApiClient_AuthChanged;
         Loaded += MainWindow_Loaded;
-        Closing += (_, _) => _closingToolWindows = true;
+        Closing += MainWindow_Closing;
         Closed += MainWindow_Closed;
         _apiDelayTimer.Start();
         RefreshAll();
@@ -606,8 +608,9 @@ public partial class MainWindow : Window
         SaveRefresh();
     }
 
-    private void ConfirmChanges_Click(object sender, RoutedEventArgs e)
+    private async void ConfirmChanges_Click(object sender, RoutedEventArgs e)
     {
+        if (_savingChanges) return;
         var invalidScoreSeat = Enumerable.Range(0, 4)
             .FirstOrDefault(seat => _rawScoreInputs[seat] is not null && !int.TryParse(_rawScoreInputs[seat], out _), -1);
         if (invalidScoreSeat >= 0)
@@ -623,25 +626,58 @@ public partial class MainWindow : Window
             return;
         }
         if (!HasPendingChanges()) return;
-
-        // 先完成全部输入校验，再一起提交资料和累计精算点。
-        _playerPresentationDraft.Apply(_settings);
-        _totalPointsDraft.Apply(_settings);
-        Array.Fill(_rawScoreInputs, null);
-        Array.Fill(_rawTotalInputs, null);
-        _reducer.UpdateSettings(_settings);
-        _reportReducer.UpdateSettings(_settings);
+        _savingChanges = true;
+        SetManualEditingEnabled(false);
+        UpdateConfirmChangesButton();
         try
         {
-            _scoreReportRecorder.Observe(_reportReducer.Current, "人工确认", DateTimeOffset.Now);
+            var saved = await ManualChangeCommitter.SaveAsync(_settings, _playerPresentationDraft,
+                _totalPointsDraft, _settingsStore.SaveAsync);
+            _settings = saved;
+            Array.Fill(_rawScoreInputs, null);
+            Array.Fill(_rawTotalInputs, null);
+            _reducer.UpdateSettings(_settings);
+            _reportReducer.UpdateSettings(_settings);
+            _lastManualSaveAt = DateTimeOffset.Now;
+            PlayerInputStatusText.Text = string.Empty;
+            try
+            {
+                _scoreReportRecorder.Observe(_reportReducer.Current, "人工确认", DateTimeOffset.Now);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                _roundReportError = "修改已保存，分数报告写入失败：" + exception.Message;
+            }
+            RefreshAll();
         }
-        catch (IOException exception)
+        catch (Exception exception)
         {
-            ReportStatusText.Text = "报告写入失败：" + exception.Message;
+            PlayerInputStatusText.Text = "保存失败，修改已保留，可再次确认：" + exception.Message;
         }
-        PlayerInputStatusText.Text = string.Empty;
-        UpdateConfirmChangesButton();
-        SaveRefresh();
+        finally
+        {
+            _savingChanges = false;
+            SetManualEditingEnabled(true);
+            UpdateConfirmChangesButton();
+        }
+    }
+
+    private void SetManualEditingEnabled(bool enabled)
+    {
+        MainContentRoot.IsEnabled = enabled;
+        foreach (var pair in _toolWindows)
+            if (pair.Key != "preview") pair.Value.IsEnabled = enabled;
+    }
+
+    private void MainWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
+    {
+        if (_savingChanges)
+        {
+            e.Cancel = true;
+            PlayerInputStatusText.Text = "正在保存修改，请稍候再退出。";
+            return;
+        }
+        _closingToolWindows = true;
     }
 
     private bool HasPendingChanges() =>
@@ -650,8 +686,13 @@ public partial class MainWindow : Window
 
     private void UpdateConfirmChangesButton()
     {
-        if (ConfirmChangesButton is not null)
-            ConfirmChangesButton.IsEnabled = HasPendingChanges();
+        if (ConfirmChangesButton is null) return;
+        ConfirmChangesButton.IsEnabled = HasPendingChanges() && !_savingChanges;
+        ConfirmChangesButton.Content = _savingChanges ? "保存中…" : "确认修改";
+        ChangeStatusText.Text = _savingChanges ? "正在保存选手资料与累计精算点…"
+            : HasPendingChanges() ? "有待确认修改；资料和精算点将一起更新。"
+            : _lastManualSaveAt is { } saved ? $"修改已保存并同步 · {saved:HH:mm:ss}"
+            : "暂无待确认修改";
     }
 
     private void UpdateInputStatus()

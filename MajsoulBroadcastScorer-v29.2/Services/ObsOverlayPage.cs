@@ -100,6 +100,7 @@ public static class ObsOverlayPage
     #stage.brand-avatar .avatar-frame { inset: 0; width: 100%; height: 100%; }
     #stage.brand-avatar .info { left: 174px; top: 0; width: 172px; }
     #stage.brand-avatar .name { left: 174px; top: 24px; width: 172px; height: 34px; color: #f5f39a; text-align: left; font-family: "Microsoft YaHei UI", "Microsoft YaHei", sans-serif; font-size: 27px; font-weight: 900; line-height: 34px; -webkit-text-stroke: 0; text-shadow: 0 2px 4px rgba(0,0,0,.65); }
+    #stage.brand-avatar .name.wrapped-name { top: 10px; height: 48px; white-space: normal; overflow-wrap: anywhere; line-height: 1.05; }
     #stage.brand-avatar .total { left: 0; top: 88px; height: 49px; overflow: hidden; color: #fff; font: 800 43px/1.1 Arial, "Microsoft YaHei UI", sans-serif; text-align: left; text-shadow: 0 2px 4px rgba(0,0,0,.65); }
     #stage.brand-avatar .score,
     #stage.brand-avatar .point-split,
@@ -476,8 +477,23 @@ public static class ObsOverlayPage
       const text = value || '';
       element.textContent = text;
       element.title = text;
+      element.classList.remove('wrapped-name');
       let size = stage.classList.contains('brand-avatar') ? 27 : stage.classList.contains('vertical-avatar') ? 30 : 28;
       element.style.fontSize = `${size}px`;
+      if (stage.classList.contains('brand-avatar')) {
+        while (element.scrollWidth > element.clientWidth && size > 20) {
+          size -= 1;
+          element.style.fontSize = `${size}px`;
+        }
+        if (element.scrollWidth > element.clientWidth) {
+          element.classList.add('wrapped-name');
+          while ((element.scrollWidth > element.clientWidth || element.scrollHeight > element.clientHeight) && size > 10) {
+            size -= 1;
+            element.style.fontSize = `${size}px`;
+          }
+        }
+        return;
+      }
       while (element.scrollWidth > element.clientWidth && size > 10) {
         size -= 1;
         element.style.fontSize = `${size}px`;

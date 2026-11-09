@@ -86,7 +86,8 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
-        try { _apiClient?.SendControlAsync("host.shutdown").Wait(TimeSpan.FromSeconds(1)); } catch { }
+        if (_backendManager?.OwnsProcess == true)
+            try { _apiClient?.SendControlAsync("host.shutdown").Wait(TimeSpan.FromSeconds(1)); } catch { }
         _apiClient?.Dispose();
         _obsServer?.Dispose();
         _backendManager?.Dispose();
