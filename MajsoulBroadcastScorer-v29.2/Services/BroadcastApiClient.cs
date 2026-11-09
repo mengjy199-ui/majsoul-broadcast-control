@@ -55,7 +55,7 @@ public sealed class BroadcastApiClient : IDisposable
                 Volatile.Write(ref _socket, socket);
                 MarkMessageReceived();
                 OnStatus("本机观战服务已连接，正在同步状态", true);
-                await SendAsync(socket, new { type = "hello", client = "majsoul-live-v29.2", version = "29.2" }, cancellationToken);
+                await SendAsync(socket, new { type = "hello", client = "majsoul-live-v0.292", version = "0.292" }, cancellationToken);
                 await SendAsync(socket, new { type = "subscribe", events = new[] { "auth", "observe" } }, cancellationToken);
                 await SendAsync(socket, new { type = "snapshot" }, cancellationToken);
 

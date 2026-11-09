@@ -15,7 +15,7 @@ public sealed class SettingsStore
     public SettingsStore(string baseDirectory)
     {
         _baseDirectory = Path.GetFullPath(baseDirectory);
-        _settingsPath = Path.Combine(_baseDirectory, "v29.2-settings.json");
+        _settingsPath = Path.Combine(_baseDirectory, "v0.292-settings.json");
         _backupPath = _settingsPath + ".bak";
         _assetsDirectory = Path.Combine(_baseDirectory, "assets");
     }
@@ -25,7 +25,7 @@ public sealed class SettingsStore
 
     public async Task<V27Settings> LoadAsync()
     {
-        var loadPath = new[] { _settingsPath, Path.Combine(_baseDirectory, "v29.1-settings.json"), Path.Combine(_baseDirectory, "v29-settings.json") }
+        var loadPath = new[] { _settingsPath, Path.Combine(_baseDirectory, "v29.2-settings.json"), Path.Combine(_baseDirectory, "v29.1-settings.json"), Path.Combine(_baseDirectory, "v29-settings.json") }
             .FirstOrDefault(File.Exists) ?? _settingsPath;
         var backupPath = loadPath + ".bak";
         if (!File.Exists(loadPath))

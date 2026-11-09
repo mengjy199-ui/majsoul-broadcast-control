@@ -56,6 +56,10 @@ public partial class MainWindow : Window
         _settingsStore = settingsStore;
         _settings = settings;
         _settings.Normalize();
+        if (_settings.OverlayStyle == OverlayLayoutStyle.HorizontalPlayers)
+            _settings.OverlayStyle = OverlayLayoutStyle.VerticalAvatar;
+        foreach (var player in _settings.Players)
+            player.AvatarMode = AvatarDisplayMode.Image;
         _stylePublication = new OverlayStylePublication(_settings.OverlayStyle);
         _verticalCardPublication = new VerticalCardPublication(_settings);
         _apiClient = apiClient;
@@ -82,6 +86,7 @@ public partial class MainWindow : Window
         _apiClient.StateChanged += ApiClient_StateChanged;
         _apiClient.AuthChanged += ApiClient_AuthChanged;
         Loaded += MainWindow_Loaded;
+        Closing += (_, _) => _closingToolWindows = true;
         Closed += MainWindow_Closed;
         _apiDelayTimer.Start();
         RefreshAll();
@@ -102,7 +107,7 @@ public partial class MainWindow : Window
             OverlayLayoutStyle.VerticalMatch => "竖排头像·赛事展示",
             OverlayLayoutStyle.TeamMode => "队伍模式",
             OverlayLayoutStyle.GapConditions => "分差与逆转",
-            _ => "横排选手卡"
+            _ => "竖排头像"
         };
         GapTargetComboBox.SelectedValue = _settings.GapTargetMode switch
         {
@@ -132,7 +137,7 @@ public partial class MainWindow : Window
         {
             _controlAvailable = false;
             _controlProbeStarted = false;
-            UpdateControlButtons();
+            SetAuthenticationState(false);
         }
         else if (!_controlProbeStarted)
         {
@@ -145,6 +150,7 @@ public partial class MainWindow : Window
         AccountStatusText.Text = auth.Account is null
             ? $"雀魂账号：未登录（连接 {auth.Connection}）"
             : $"雀魂账号：{auth.Account.Nickname}（ID {auth.Account.AccountId}）";
+        SetAuthenticationState(_apiConnectionAvailable && auth.Account is not null && auth.Connection == "connected");
     });
 
     private void ApiClient_StateChanged(object? sender, BroadcastApiState state) => Dispatcher.BeginInvoke(() =>
@@ -210,6 +216,7 @@ public partial class MainWindow : Window
 
     private void MainWindow_Closed(object? sender, EventArgs e)
     {
+        CloseToolWindows();
         _apiDelayTimer.Stop();
         _apiDelayTimer.Tick -= ApiDelayTimer_Tick;
         _apiClient.StatusChanged -= ApiClient_StatusChanged;
@@ -254,6 +261,7 @@ public partial class MainWindow : Window
             var reply = await _apiClient.SendControlAsync("auth.login", new { accountName, password });
             EnsureControlSuccess(reply);
             _settings.AccountName = accountName;
+            SetAuthenticationState(true);
             PasswordInput.Clear();
             await _settingsStore.SaveAsync(_settings);
             ControlStatusText.Text = "登录成功。";
@@ -264,12 +272,18 @@ public partial class MainWindow : Window
         await RunControlActionAsync("正在退出登录…", async () =>
         {
             EnsureControlSuccess(await _apiClient.SendControlAsync("auth.logout"));
+            SetAuthenticationState(false);
             PasswordInput.Clear();
             ControlStatusText.Text = "已退出登录。";
         });
 
     private async void FetchGames_Click(object sender, RoutedEventArgs e)
     {
+        if (!_isAuthenticated)
+        {
+            ControlStatusText.Text = "请先登录，再输入大会 ID 获取对局。";
+            return;
+        }
         if (!int.TryParse(ContestIdTextBox.Text.Trim(), out var contestId) || contestId <= 0)
         {
             ControlStatusText.Text = "请输入有效的大会 ID。";
@@ -312,6 +326,11 @@ public partial class MainWindow : Window
 
     private async void StartObserve_Click(object sender, RoutedEventArgs e)
     {
+        if (!_isAuthenticated)
+        {
+            ControlStatusText.Text = "请先登录并获取对局，再开始观战。";
+            return;
+        }
         if (ContestGamesList.SelectedItem is not ContestGameOption game)
         {
             ControlStatusText.Text = "请先选择一场对局。";
@@ -351,12 +370,15 @@ public partial class MainWindow : Window
     private void UpdateControlButtons()
     {
         if (LoginButton is null) return;
-        var enabled = _controlAvailable && !_controlBusy;
-        LoginButton.IsEnabled = enabled;
-        LogoutButton.IsEnabled = enabled;
-        FetchGamesButton.IsEnabled = enabled;
-        StartObserveButton.IsEnabled = enabled;
-        StopObserveButton.IsEnabled = enabled;
+        var enabled = _apiConnectionAvailable && _controlAvailable && !_controlBusy;
+        LoginButton.IsEnabled = enabled && !_isAuthenticated;
+        LogoutButton.IsEnabled = enabled && _isAuthenticated;
+        AccountNameTextBox.IsEnabled = enabled && !_isAuthenticated;
+        PasswordInput.IsEnabled = enabled && !_isAuthenticated;
+        ContestAccessPanel.IsEnabled = enabled && _isAuthenticated;
+        FetchGamesButton.IsEnabled = enabled && _isAuthenticated;
+        StartObserveButton.IsEnabled = enabled && _isAuthenticated && ContestGamesList.SelectedItem is ContestGameOption;
+        StopObserveButton.IsEnabled = enabled && _isAuthenticated;
     }
 
     private static void EnsureControlSuccess(ControlReply reply)
@@ -400,7 +422,10 @@ public partial class MainWindow : Window
         var scoreUpdate = display.LastScoreUpdateUnixMs > 0
             ? DateTimeOffset.FromUnixTimeMilliseconds(display.LastScoreUpdateUnixMs).LocalDateTime.ToString("HH:mm:ss")
             : "等待变化";
-        ApiStatusText.Text = $"连接：{display.ConnectionText}";
+        ApiStatusText.Text = _apiConnectionAvailable ? "已连接" : "未连接";
+        ConnectionIndicator.Fill = _apiConnectionAvailable
+            ? System.Windows.Media.Brushes.LimeGreen
+            : System.Windows.Media.Brushes.IndianRed;
         ApiDataStatusText.Text = display.IsObserving
             ? $"数据：{display.RoundLabel}　{display.Honba} 本场　{display.RiichiSticks} 供托　分数更新 {scoreUpdate}"
             : "数据：尚未收到有效观战画面，继续保留最后一次选手资料";
@@ -408,30 +433,19 @@ public partial class MainWindow : Window
             $"当前 {_settings.ApiDisplayDelaySeconds:0.##} 秒　待播 {_apiStateQueue.Count} 条" +
             (_apiStateQueue.DroppedCount > 0 ? $"　已丢弃过旧数据 {_apiStateQueue.DroppedCount} 条" : string.Empty) +
             $"　收包 {FormatTime(_lastApiReceivedAt)}　播出 {FormatTime(_lastPublishedAt)}";
-        ObsStatusText.Text = $"OBS 服务：{ObsOverlayServer.OverlayUrl}";
+        ObsStatusText.Text = ObsOverlayServer.OverlayUrl;
     }
 
     private void UpdateStyleControls()
     {
         var previewStyle = _stylePublication.PreviewStyle;
-        var horizontal = previewStyle == OverlayLayoutStyle.HorizontalPlayers;
         VerticalMatchSettingsGroup.Visibility = previewStyle == OverlayLayoutStyle.VerticalMatch ? Visibility.Visible : Visibility.Collapsed;
         GapSettingsGroup.Visibility = previewStyle == OverlayLayoutStyle.GapConditions
             ? Visibility.Visible
             : Visibility.Collapsed;
-        EventCopyGroup.Visibility = horizontal ? Visibility.Visible : Visibility.Collapsed;
-        LiveAssetsGroup.Visibility = horizontal ? Visibility.Visible : Visibility.Collapsed;
-        foreach (var editor in _playerEditors)
-            editor.ShowAvatarControls = true;
-
-        var pending = _stylePublication.HasPendingPublication ||
-            (previewStyle == OverlayLayoutStyle.VerticalMatch && _verticalCardPublication.HasPendingChanges);
-        ConfirmOverlayStyleButton.Visibility = pending
-            ? Visibility.Visible
-            : Visibility.Collapsed;
-        OverlayStyleStatusText.Text = pending
-            ? $"右侧是待确认预览；确认后同步 OBS。当前播出“{StyleName(_stylePublication.PublishedStyle)}”。"
-            : $"OBS 当前样式：{StyleName(_stylePublication.PublishedStyle)}";
+        EventCopyGroup.Visibility = Visibility.Collapsed;
+        LiveAssetsGroup.Visibility = Visibility.Collapsed;
+        OverlayStyleStatusText.Text = $"当前样式：{StyleName(_stylePublication.PublishedStyle)} · 选择后自动同步 OBS";
     }
 
     private static string StyleName(OverlayLayoutStyle style) => style switch
@@ -440,7 +454,7 @@ public partial class MainWindow : Window
         OverlayLayoutStyle.VerticalMatch => "竖排头像·赛事展示",
         OverlayLayoutStyle.TeamMode => "队伍模式",
         OverlayLayoutStyle.GapConditions => "分差与逆转",
-        _ => "横排选手卡"
+        _ => "竖排头像"
     };
 
     private void UpdateGapPlayerOptions(LiveDisplayState display)
@@ -485,9 +499,7 @@ public partial class MainWindow : Window
                     RiichiDisplayMode.ForceOff => "强制 OFF",
                     _ => "自动跟随 API"
                 };
-                var avatarMode = _playerPresentationDraft.GetAvatarMode(shown.Seat, setting.AvatarMode);
                 var avatarPath = _playerPresentationDraft.GetAvatarPath(shown.Seat, setting.AvatarPath);
-                editor.AvatarMode = avatarMode == AvatarDisplayMode.Transparent ? "透明摄像头槽" : "上传图片";
                 editor.AvatarStatus = _playerPresentationDraft.IsAvatarDirty(shown.Seat)
                     ? "待更新"
                     : _settingsStore.ResolveAsset(avatarPath) is null ? "未上传" : "已上传";
@@ -558,11 +570,6 @@ public partial class MainWindow : Window
                     _ => RiichiDisplayMode.Auto
                 };
                 break;
-            case nameof(PlayerEditorViewModel.AvatarMode):
-                _playerPresentationDraft.StageAvatarMode(editor.Seat,
-                    editor.AvatarMode == "透明摄像头槽" ? AvatarDisplayMode.Transparent : AvatarDisplayMode.Image);
-                UpdatePlayerApplyButton();
-                return;
             case nameof(PlayerEditorViewModel.AvatarFrameMode):
                 _playerPresentationDraft.StageAvatarFrameMode(editor.Seat, editor.AvatarFrameMode switch
                 {
@@ -617,7 +624,7 @@ public partial class MainWindow : Window
         var pending = _playerPresentationDraft.HasPendingChanges || _rawScoreInputs.Any(value => value is not null);
         ApplyPlayerChangesButton.IsEnabled = pending;
         ApplyPlayerChangesButton.Content = pending
-            ? "确认更新选手资料（昵称 / 分数 / 队伍 / 头像 / 头像框）"
+            ? "确认更新选手资料"
             : "选手资料已同步";
     }
 
@@ -845,19 +852,10 @@ public partial class MainWindow : Window
             "竖排头像·赛事展示" => OverlayLayoutStyle.VerticalMatch,
             "队伍模式" => OverlayLayoutStyle.TeamMode,
             "分差与逆转" => OverlayLayoutStyle.GapConditions,
-            _ => OverlayLayoutStyle.HorizontalPlayers
+            _ => OverlayLayoutStyle.VerticalAvatar
         };
         _stylePublication.Select(selectedStyle);
-        if (!_stylePublication.HasPendingPublication)
-            _settings.OverlayStyle = _stylePublication.PublishedStyle;
-        SaveRefresh();
-    }
-
-    private void ConfirmOverlayStyle_Click(object sender, RoutedEventArgs e)
-    {
         _stylePublication.Confirm();
-        if (_stylePublication.PreviewStyle == OverlayLayoutStyle.VerticalMatch)
-            _verticalCardPublication.Confirm(_settings);
         _settings.OverlayStyle = _stylePublication.PublishedStyle;
         SaveRefresh();
     }
@@ -868,7 +866,8 @@ public partial class MainWindow : Window
         _verticalCardPublication.Select(
             VerticalNameComboBox.SelectedValue as string == "选手姓名" ? VerticalNameContent.PlayerName : VerticalNameContent.TeamName,
             VerticalNumberComboBox.SelectedValue as string == "精算点" ? VerticalNumberContent.CalculationPoints : VerticalNumberContent.CurrentScore);
-        RefreshAll();
+        _verticalCardPublication.Confirm(_settings);
+        SaveRefresh();
     }
 
     private void GapSettings_Changed(object sender, SelectionChangedEventArgs e)
@@ -1046,16 +1045,18 @@ public partial class MainWindow : Window
         BottomLeftStatus.Text = _settingsStore.ResolveAsset(_settings.BottomLeftPath) is null ? "未上传" : "已上传";
     }
 
-    private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
+    private async Task InitializePreviewAsync()
     {
         try
         {
             var userDataFolder = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "MajsoulBroadcastScorer-v29.2",
+                "MajsoulBroadcastScorer-v0.292",
                 "WebView2");
             var environment = await CoreWebView2Environment.CreateAsync(userDataFolder: userDataFolder);
+            if (_closingToolWindows) return;
             await PreviewWebView.EnsureCoreWebView2Async(environment);
+            if (_closingToolWindows) return;
             PreviewWebView.DefaultBackgroundColor = System.Drawing.Color.Transparent;
             PreviewWebView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
             PreviewWebView.CoreWebView2.Settings.AreDevToolsEnabled = false;
@@ -1066,6 +1067,7 @@ public partial class MainWindow : Window
         }
         catch (Exception exception)
         {
+            if (_closingToolWindows) return;
             PreviewErrorText.Text = "实时预览启动失败，但 OBS 页面仍可使用。请安装或修复 Microsoft Edge WebView2 Runtime。\n\n" + exception.Message;
             PreviewErrorText.Visibility = Visibility.Visible;
         }
@@ -1168,7 +1170,7 @@ public partial class MainWindow : Window
                 points?.CurrentPoints ?? 0,
                 points?.ProjectedTotalPoints ?? player.TotalPoints,
                 player.Riichi,
-                player.AvatarMode == AvatarDisplayMode.Transparent,
+                false,
                 path is not null,
                 VersionOf(path),
                 player.AvatarFrameMode switch
@@ -1325,33 +1327,10 @@ public partial class MainWindow : Window
         catch (Exception exception)
         {
             if (!Dispatcher.CheckAccess())
-                await Dispatcher.InvokeAsync(() => ObsStatusText.Text = "设置保存失败：" + exception.Message);
+                await Dispatcher.InvokeAsync(() => PlayerInputStatusText.Text = "设置保存失败：" + exception.Message);
             else
-                ObsStatusText.Text = "设置保存失败：" + exception.Message;
+                PlayerInputStatusText.Text = "设置保存失败：" + exception.Message;
         }
-    }
-
-    private async void CopyObsUrl_Click(object sender, RoutedEventArgs e)
-    {
-        ObsStatusText.Text = "正在复制 OBS 地址…";
-        var result = await ClipboardRetry.TrySetAsync(() =>
-        {
-            var data = new DataObject();
-            data.SetData(DataFormats.UnicodeText, ObsOverlayServer.OverlayUrl);
-            Clipboard.SetDataObject(data, copy: false);
-        });
-        if (result.Success)
-        {
-            ObsStatusText.Text = "OBS 地址已复制：" + ObsOverlayServer.OverlayUrl;
-            return;
-        }
-
-        ObsStatusText.Text = "剪贴板正被其他程序占用，请稍后重试或手动复制 OBS 地址。";
-        MessageBox.Show(
-            $"剪贴板正被其他程序占用，复制失败，但程序会继续运行。{Environment.NewLine}{Environment.NewLine}{ObsOverlayServer.OverlayUrl}",
-            "无法复制 OBS 地址",
-            MessageBoxButton.OK,
-            MessageBoxImage.Warning);
     }
 
     private static string FormatSigned(decimal value) =>

@@ -11,7 +11,6 @@ public sealed class PlayerEditorViewModel : INotifyPropertyChanged
     private string _wind = "?";
     private string _total = "+0.0";
     private string _riichiMode = "自动跟随 API";
-    private string _avatarMode = "上传图片";
     private string _avatarStatus = "未上传";
     private string _avatarFrameMode = "默认边框";
     private string _avatarFrameStatus = "默认";
@@ -20,7 +19,6 @@ public sealed class PlayerEditorViewModel : INotifyPropertyChanged
     private string _nameSource = "API";
     private string _scoreSource = "API";
     private string _windSource = "API";
-    private bool _showAvatarControls = true;
 
     public PlayerEditorViewModel(int seat, Action<PlayerEditorViewModel, string> changed)
     {
@@ -29,14 +27,13 @@ public sealed class PlayerEditorViewModel : INotifyPropertyChanged
     }
 
     public int Seat { get; }
-    public string SeatLabel => $"seat {Seat}";
+    public string SeatLabel => $"选手 {Seat + 1}";
     public Action<PlayerEditorViewModel, string> Changed { get; }
     public string Name { get => _name; set => Set(ref _name, value); }
     public string Score { get => _score; set => Set(ref _score, value); }
     public string Wind { get => _wind; set => Set(ref _wind, value); }
     public string Total { get => _total; set => Set(ref _total, value); }
     public string RiichiMode { get => _riichiMode; set => Set(ref _riichiMode, value); }
-    public string AvatarMode { get => _avatarMode; set => Set(ref _avatarMode, value); }
     public string AvatarStatus { get => _avatarStatus; set => Set(ref _avatarStatus, value); }
     public string AvatarFrameMode { get => _avatarFrameMode; set => Set(ref _avatarFrameMode, value); }
     public string AvatarFrameStatus { get => _avatarFrameStatus; set => Set(ref _avatarFrameStatus, value); }
@@ -45,18 +42,6 @@ public sealed class PlayerEditorViewModel : INotifyPropertyChanged
     public string NameSource { get => _nameSource; set => Set(ref _nameSource, value); }
     public string ScoreSource { get => _scoreSource; set => Set(ref _scoreSource, value); }
     public string WindSource { get => _windSource; set => Set(ref _windSource, value); }
-    public bool ShowAvatarControls
-    {
-        get => _showAvatarControls;
-        set
-        {
-            if (_showAvatarControls == value)
-                return;
-            _showAvatarControls = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowAvatarControls)));
-        }
-    }
-
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public void UpdateSilently(Action update)

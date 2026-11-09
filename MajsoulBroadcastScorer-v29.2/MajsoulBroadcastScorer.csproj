@@ -6,8 +6,9 @@
     <UseSystemDrawing>true</UseSystemDrawing>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <AssemblyName>雀魂直播控制中心-v29.2</AssemblyName>
-    <Version>29.2.0</Version>
+    <AssemblyName>雀魂直播控制中心-v0.292</AssemblyName>
+    <Version>0.292.0</Version>
+    <InformationalVersion>0.292</InformationalVersion>
     <RootNamespace>MajsoulBroadcastScorer.V27</RootNamespace>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
   </PropertyGroup>
@@ -27,7 +28,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Remove="qa\**\*.cs" />
-    <Content Remove="bin\**;obj\**;dist\**;release\**;Backend\**;v29*-settings.json" />
-    <None Remove="bin\**;obj\**;dist\**;release\**;Backend\**;v29*-settings.json" />
+    <Content Remove="bin\**;obj\**;dist\**;release\**;Backend\**;v29*-settings.json;v0.292-settings.json*" />
+    <None Remove="bin\**;obj\**;dist\**;release\**;Backend\**;v29*-settings.json;v0.292-settings.json*" />
   </ItemGroup>
 </Project>

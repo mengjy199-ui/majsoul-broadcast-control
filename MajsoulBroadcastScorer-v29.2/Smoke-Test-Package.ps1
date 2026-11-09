@@ -1,9 +1,9 @@
-param(
-    [string]$PublishDirectory = (Join-Path $PSScriptRoot 'dist\雀魂直播控制中心-v29.2-win-x64')
+﻿param(
+    [string]$PublishDirectory = (Join-Path $PSScriptRoot 'dist\雀魂直播控制中心-v0.292-win-x64')
 )
 
 $ErrorActionPreference = 'Stop'
-$executable = Join-Path $PublishDirectory '雀魂直播控制中心-v29.2.exe'
+$executable = Join-Path $PublishDirectory '雀魂直播控制中心-v0.292.exe'
 if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) { throw "未找到发布程序：$executable" }
 foreach ($port in 7998, 17657) {
     if (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue) {

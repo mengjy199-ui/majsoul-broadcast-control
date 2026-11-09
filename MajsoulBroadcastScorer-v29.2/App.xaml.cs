@@ -20,7 +20,7 @@ public partial class App : Application
         _singleInstanceMutex = new Mutex(true, SingleInstanceMutexName, out var createdNew);
         if (!createdNew)
         {
-            MessageBox.Show("已有 v29 系列控制中心正在运行，请关闭后再启动 v29.2。", "无法重复启动", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show("已有控制中心正在运行，请关闭后再启动 0.292 测试版。", "无法重复启动", MessageBoxButton.OK, MessageBoxImage.Warning);
             Shutdown(2);
             return;
         }
@@ -49,12 +49,12 @@ public partial class App : Application
                 root = root.InnerException;
             try
             {
-                File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "v29.2-startup-error.log"), exception.ToString());
+                File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "v0.292-startup-error.log"), exception.ToString());
             }
             catch
             {
             }
-            MessageBox.Show($"程序启动失败：{root.Message}", "雀魂直播控制中心 v29.2", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show($"程序启动失败：{root.Message}", "雀魂直播控制中心 0.292 · 调优测试版", MessageBoxButton.OK, MessageBoxImage.Error);
             Shutdown(1);
         }
     }
@@ -68,7 +68,7 @@ public partial class App : Application
         try
         {
             File.AppendAllText(
-                Path.Combine(AppContext.BaseDirectory, "v29.2-runtime-error.log"),
+                Path.Combine(AppContext.BaseDirectory, "v0.292-runtime-error.log"),
                 $"{DateTime.Now:O}{Environment.NewLine}{e.Exception}{Environment.NewLine}{Environment.NewLine}");
         }
         catch
@@ -77,8 +77,8 @@ public partial class App : Application
 
         e.Handled = true;
         MessageBox.Show(
-            $"程序遇到一个错误，但已阻止闪退。{Environment.NewLine}{e.Exception.Message}{Environment.NewLine}{Environment.NewLine}详细记录：v29.2-runtime-error.log",
-            "雀魂直播控制中心 v29.2",
+            $"程序遇到一个错误，但已阻止闪退。{Environment.NewLine}{e.Exception.Message}{Environment.NewLine}{Environment.NewLine}详细记录：v0.292-runtime-error.log",
+            "雀魂直播控制中心 0.292 · 调优测试版",
             MessageBoxButton.OK,
             MessageBoxImage.Warning);
     }
