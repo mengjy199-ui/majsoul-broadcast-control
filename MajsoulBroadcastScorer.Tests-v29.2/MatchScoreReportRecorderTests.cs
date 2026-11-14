@@ -83,6 +83,7 @@ public sealed class MatchScoreReportRecorderTests : IDisposable
         round,
         0,
         0,
+        false,
         0,
         true,
         scores.Select((score, seat) => new DisplayPlayerState(

@@ -455,6 +455,7 @@ public partial class MainWindow : Window
         UpdateAssetLabels();
         UpdateStyleControls();
         UpdateReportStatus();
+        UpdateCumulativeSettlement(display);
         UpdateObs(display);
     }
 
@@ -474,7 +475,8 @@ public partial class MainWindow : Window
             : "等待变化";
         UpdateConnectionIndicator();
         ApiDataStatusText.Text = display.IsObserving
-            ? $"数据：{display.RoundLabel}　{display.Honba} 本场　{display.RiichiSticks} 供托　分数更新 {scoreUpdate}"
+            ? $"数据：{display.RoundLabel}　{display.Honba} 本场　{display.RiichiSticks} 供托　" +
+              $"{(display.Ended ? "半庄已结束" : "进行中")}　分数更新 {scoreUpdate}"
             : "数据：尚未收到有效观战画面，继续保留最后一次选手资料";
         ApiDelayStatusText.Text =
             $"当前 {_settings.ApiDisplayDelaySeconds:0.##} 秒　待播 {_apiStateQueue.Count} 条" +
@@ -751,14 +753,31 @@ public partial class MainWindow : Window
     private void StageProjectedTotals_Click(object sender, RoutedEventArgs e)
     {
         var display = _reducer.Current;
+        if (!display.Ended)
+        {
+            CumulativeSettlementHintText.Text = "本半庄尚未结束，暂不能累计。";
+            return;
+        }
+        if (_settings.IsSettlementApplied(display.GameUuid))
+        {
+            CumulativeSettlementHintText.Text = "本半庄已经计入累计，不能重复相加。";
+            return;
+        }
+        if (_totalPointsDraft.SourceSettlementGameUuid is { } pendingGameUuid &&
+            !string.Equals(pendingGameUuid, display.GameUuid, StringComparison.Ordinal))
+        {
+            CumulativeSettlementHintText.Text = "上一半庄结果尚未确认，请先点击“确认修改”。";
+            return;
+        }
         try
         {
             var projectedTotals = CalculateReversalResults(display)
                 .ToDictionary(item => item.Key, item => item.Value.ProjectedTotalPoints);
-            _totalPointsDraft.SetAll(projectedTotals);
+            _totalPointsDraft.SetAll(projectedTotals, display.GameUuid);
             Array.Fill(_rawTotalInputs, null);
             UpdatePlayerEditors(display);
             UpdateConfirmChangesButton();
+            UpdateCumulativeSettlement(display);
         }
         catch (ArgumentException)
         {
@@ -768,6 +787,61 @@ public partial class MainWindow : Window
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
         }
+    }
+
+    private void UpdateCumulativeSettlement(LiveDisplayState display)
+    {
+        if (StageProjectedTotalsButton is null || CumulativeSettlementHintText is null)
+            return;
+        StageProjectedTotalsButton.IsEnabled = false;
+        if (!display.IsObserving || string.IsNullOrWhiteSpace(display.GameUuid))
+        {
+            StageProjectedTotalsButton.Content = "等待开始观战";
+            CumulativeSettlementHintText.Text = "开始观战后，半庄结束时会在这里显示可累计结果。";
+            return;
+        }
+        if (!display.Ended)
+        {
+            StageProjectedTotalsButton.Content = "等待半庄结束";
+            CumulativeSettlementHintText.Text = "本半庄尚未结束，暂不能累计；同一半庄只计算一次。";
+            return;
+        }
+        if (_settings.IsSettlementApplied(display.GameUuid))
+        {
+            StageProjectedTotalsButton.Content = "本半庄已累计";
+            CumulativeSettlementHintText.Text = "本半庄已经计入累计，不能重复相加。如需更正，可在选手卡中手动修改后确认。";
+            return;
+        }
+        if (_totalPointsDraft.SourceSettlementGameUuid is { } pendingGameUuid)
+        {
+            StageProjectedTotalsButton.Content = string.Equals(pendingGameUuid, display.GameUuid, StringComparison.Ordinal)
+                ? "已填入，等待确认"
+                : "请先确认上一半庄";
+            CumulativeSettlementHintText.Text = string.Equals(pendingGameUuid, display.GameUuid, StringComparison.Ordinal)
+                ? "本半庄结果已经填入，请点击“确认修改”完成累计。"
+                : "上一半庄结果尚未确认，请先点击“确认修改”。";
+            return;
+        }
+
+        var results = GetCachedReversalResults(display);
+        if (results.Count != 4)
+        {
+            StageProjectedTotalsButton.Content = "等待完整终局数据";
+            CumulativeSettlementHintText.Text = "半庄已结束，等待四名选手的座位风和最终分数。";
+            return;
+        }
+
+        StageProjectedTotalsButton.IsEnabled = true;
+        StageProjectedTotalsButton.Content = "填入本半庄累计结果";
+        CumulativeSettlementHintText.Text = "本半庄只会累计一次：" + Environment.NewLine +
+            string.Join(Environment.NewLine, display.Players.OrderBy(player => player.Seat).Select(player =>
+            {
+                var result = results[player.Seat];
+                var name = string.IsNullOrWhiteSpace(player.Nickname)
+                    ? $"选手 {player.Seat + 1}"
+                    : player.Nickname;
+                return $"{name}：本半庄 {FormatSigned(result.CurrentPoints)}，累计后 {FormatSigned(result.ProjectedTotalPoints)}";
+            }));
     }
 
     private void RestoreApi_Click(object sender, RoutedEventArgs e)

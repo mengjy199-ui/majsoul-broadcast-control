@@ -42,6 +42,30 @@ public sealed class ManualChangeCommitterTests
     }
 
     [Fact]
+    public async Task FailedSettlementSaveDoesNotMarkTheGameAsApplied()
+    {
+        var current = new V27Settings();
+        var totals = new TotalPointsDraft(current);
+        totals.SetAll(new Dictionary<int, decimal>
+        {
+            [0] = 12.3m,
+            [1] = -4.6m,
+            [2] = 7.9m,
+            [3] = 0m
+        }, "game-1");
+
+        await Assert.ThrowsAsync<IOException>(() => ManualChangeCommitter.SaveAsync(
+            current,
+            new PlayerPresentationDraft(),
+            totals,
+            _ => Task.FromException(new IOException("fixture: no disk space"))));
+
+        Assert.Equal(string.Empty, current.LastSettlementGameUuid);
+        Assert.Equal("game-1", totals.SourceSettlementGameUuid);
+        Assert.True(totals.HasPendingChanges);
+    }
+
+    [Fact]
     public async Task SuccessfulSaveContainsBothDraftsBeforeTheyAreCleared()
     {
         var current = new V27Settings();

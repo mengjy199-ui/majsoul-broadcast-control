@@ -104,6 +104,7 @@ public sealed class V27Settings
     public OverlayLayoutStyle OverlayStyle { get; set; } = OverlayLayoutStyle.HorizontalPlayers;
     public VerticalNameContent VerticalName { get; set; } = VerticalNameContent.TeamName;
     public VerticalNumberContent VerticalNumber { get; set; } = VerticalNumberContent.CurrentScore;
+    public string LastSettlementGameUuid { get; set; } = string.Empty;
     public int GapSelectedSeat { get; set; }
     public ReversalTargetMode GapTargetMode { get; set; } = ReversalTargetMode.PreviousRank;
     public bool ShowTotalPoints { get; set; } = true;
@@ -136,6 +137,7 @@ public sealed class V27Settings
         var migratingFromV27 = Version < 271;
         var migratingTeams = Version < 292;
         Version = 292;
+        LastSettlementGameUuid = (LastSettlementGameUuid ?? string.Empty).Trim();
         if (!Enum.IsDefined(VerticalName)) VerticalName = VerticalNameContent.TeamName;
         if (!Enum.IsDefined(VerticalNumber)) VerticalNumber = VerticalNumberContent.CurrentScore;
         LogoLayout ??= new AssetLayout { X = 35, Y = 32, Width = 300, Height = 135 };
@@ -216,6 +218,10 @@ public sealed class V27Settings
         return !bindings.SequenceEqual(Players.Select(player => (player.AccountId, player.TotalPoints)));
     }
 
+    public bool IsSettlementApplied(string gameUuid) =>
+        !string.IsNullOrWhiteSpace(gameUuid) &&
+        string.Equals(LastSettlementGameUuid, gameUuid, StringComparison.Ordinal);
+
     private static List<PlayerSlotSettings> CreateDefaultPlayers() =>
         Enumerable.Range(0, 4).Select(seat => new PlayerSlotSettings { Seat = seat }).ToList();
 }
@@ -241,6 +247,7 @@ public sealed record LiveDisplayState(
     string RoundLabel,
     int Honba,
     int RiichiSticks,
+    bool Ended,
     long LastScoreUpdateUnixMs,
     bool ShowTotalPoints,
     IReadOnlyList<DisplayPlayerState> Players);
@@ -258,6 +265,7 @@ public sealed class LiveStateReducer
     private string _roundLabel = "等待观战";
     private int _honba;
     private int _riichiSticks;
+    private bool _ended;
     private long _lastScoreUpdateUnixMs;
 
     public LiveStateReducer(V27Settings settings)
@@ -287,6 +295,7 @@ public sealed class LiveStateReducer
         if (state.Observe is null)
         {
             _observing = false;
+            _ended = false;
             return false;
         }
 
@@ -327,6 +336,7 @@ public sealed class LiveStateReducer
         _roundLabel = observe.Round.Label;
         _honba = observe.Round.Ben;
         _riichiSticks = observe.RiichiSticks;
+        _ended = observe.Ended;
         if (scoreChanged)
             _lastScoreUpdateUnixMs = state.ServerTime > 0
                 ? state.ServerTime
@@ -371,6 +381,7 @@ public sealed class LiveStateReducer
             _roundLabel,
             _honba,
             _riichiSticks,
+            _ended,
             _lastScoreUpdateUnixMs,
             _settings.ShowTotalPoints,
             players);
@@ -404,12 +415,14 @@ public sealed class TotalPointsDraft
 {
     private readonly decimal[] _values = new decimal[4];
     private readonly bool[] _dirty = new bool[4];
+    private string? _sourceSettlementGameUuid;
     private int _revision;
     internal int Revision => _revision;
     internal void AcceptIfUnchanged(int revision)
     {
         if (_revision != revision) return;
         Array.Fill(_dirty, false);
+        _sourceSettlementGameUuid = null;
         _revision++;
     }
 
@@ -421,6 +434,7 @@ public sealed class TotalPointsDraft
     }
 
     public bool HasPendingChanges => _dirty.Any(value => value);
+    public string? SourceSettlementGameUuid => _sourceSettlementGameUuid;
 
     public decimal Get(int seat) => _values[ValidateSeat(seat)];
 
@@ -432,7 +446,7 @@ public sealed class TotalPointsDraft
         _revision++;
     }
 
-    public void SetAll(IReadOnlyDictionary<int, decimal> values)
+    public void SetAll(IReadOnlyDictionary<int, decimal> values, string? sourceSettlementGameUuid = null)
     {
         ArgumentNullException.ThrowIfNull(values);
         if (values.Count != 4 || Enumerable.Range(0, 4).Any(seat => !values.ContainsKey(seat)))
@@ -440,6 +454,9 @@ public sealed class TotalPointsDraft
 
         foreach (var seat in Enumerable.Range(0, 4))
             Set(seat, values[seat]);
+        _sourceSettlementGameUuid = string.IsNullOrWhiteSpace(sourceSettlementGameUuid)
+            ? null
+            : sourceSettlementGameUuid.Trim();
     }
 
     public bool IsDirty(int seat) => _dirty[ValidateSeat(seat)];
@@ -473,12 +490,15 @@ public sealed class TotalPointsDraft
     private void ApplyTo(V27Settings settings, bool clearDraft)
     {
         settings.Normalize();
+        if (_sourceSettlementGameUuid is not null)
+            settings.LastSettlementGameUuid = _sourceSettlementGameUuid;
         foreach (var player in settings.Players)
         {
             if (_dirty[player.Seat])
                 player.TotalPoints = _values[player.Seat];
             if (clearDraft) _dirty[player.Seat] = false;
         }
+        if (clearDraft) _sourceSettlementGameUuid = null;
     }
 
     private static int ValidateSeat(int seat) => seat is >= 0 and <= 3

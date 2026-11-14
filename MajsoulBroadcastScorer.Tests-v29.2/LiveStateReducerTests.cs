@@ -76,6 +76,38 @@ public sealed class LiveStateReducerTests
     }
 
     [Fact]
+    public void EndedState_ExposesFinishedSettlementUntilNextGameStarts()
+    {
+        var reducer = new LiveStateReducer(new V27Settings());
+        reducer.Apply(State(Player(0), Player(1), Player(2), Player(3)));
+        var ended = State(Player(0), Player(1), Player(2), Player(3));
+        ended = new BroadcastApiState
+        {
+            Mode = ended.Mode,
+            Observe = new BroadcastObserveState
+            {
+                GameUuid = ended.Observe!.GameUuid,
+                Round = ended.Observe.Round,
+                Players = ended.Observe.Players,
+                Ended = true,
+                FinalRanking =
+                [
+                    Final(1, 0, 40000),
+                    Final(2, 1, 30000),
+                    Final(3, 2, 20000),
+                    Final(4, 3, 10000)
+                ]
+            }
+        };
+
+        reducer.Apply(ended);
+        Assert.True(reducer.Current.Ended);
+
+        reducer.Apply(State(Player(0), Player(1), Player(2), Player(3), gameUuid: "game-2"));
+        Assert.False(reducer.Current.Ended);
+    }
+
+    [Fact]
     public void RiichiScoreChange_AppliesBeforeRiichiStickCatchesUp()
     {
         var reducer = new LiveStateReducer(new V27Settings());
@@ -296,6 +328,31 @@ public sealed class LiveStateReducerTests
         Assert.Equal(12.3m, draft.Get(1));
         Assert.False(draft.IsDirty(0));
         Assert.True(draft.IsDirty(1));
+    }
+
+    [Fact]
+    public void SettlementGameIdIsCommittedWithTotalsAndSurvivesSerialization()
+    {
+        var settings = new V27Settings { LastSettlementGameUuid = "game-1" };
+        var draft = new TotalPointsDraft(settings);
+        draft.SetAll(new Dictionary<int, decimal>
+        {
+            [0] = 12.3m,
+            [1] = -4.6m,
+            [2] = 7.9m,
+            [3] = 0m
+        }, "game-2");
+
+        Assert.Equal("game-1", settings.LastSettlementGameUuid);
+        Assert.Equal("game-2", draft.SourceSettlementGameUuid);
+        draft.Apply(settings);
+        Assert.Equal("game-2", settings.LastSettlementGameUuid);
+        Assert.True(settings.IsSettlementApplied("game-2"));
+        Assert.False(settings.IsSettlementApplied("game-1"));
+        Assert.Null(draft.SourceSettlementGameUuid);
+
+        var loaded = V27SettingsJson.Deserialize(V27SettingsJson.Serialize(settings));
+        Assert.True(loaded.IsSettlementApplied("game-2"));
     }
 
     [Fact]
