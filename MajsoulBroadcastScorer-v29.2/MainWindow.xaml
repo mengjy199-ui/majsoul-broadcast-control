@@ -354,7 +354,7 @@
                    TextWrapping="Wrap" Foreground="#AAB3C0" Margin="3,0,3,12"/>
         <Button x:Name="StageProjectedTotalsButton" Content="等待半庄结束" Click="StageProjectedTotals_Click" HorizontalAlignment="Left" IsEnabled="False"/>
         <TextBlock x:Name="CumulativeSettlementHintText" Margin="3,8,3,0" Foreground="#AAB3C0" TextWrapping="Wrap"
-                   Text="同一半庄只计算一次；累计结果确认后，会按雀魂账号跟随选手。"/>
+                   Text="同一半庄只计算一次；累计分、手工名字、头像和头像框会按雀魂账号跟随选手。"/>
       </StackPanel>
 
       <Grid x:Name="PreviewContent">

@@ -204,11 +204,11 @@ public partial class MainWindow : Window
         foreach (var state in ready)
         {
             var beforeBindings = _settings.Players
-                .Select(player => (player.Seat, player.AccountId, player.TotalPoints))
+                .Select(AccountBindingSnapshot.From)
                 .ToArray();
             try
             {
-                if (_reducer.Apply(state, bindPlayerTotals: true))
+                if (_reducer.Apply(state, bindPlayerAccounts: true))
                 {
                     var currentSeatByAccount = _settings.Players
                         .Where(player => player.AccountId > 0)
@@ -223,10 +223,13 @@ public partial class MainWindow : Window
                     if (seatMoves.Count > 0)
                     {
                         _totalPointsDraft.Rebind(seatMoves);
+                        _playerPresentationDraft.Rebind(seatMoves);
                         ReorderSeatInputs(_rawTotalInputs, seatMoves);
+                        ReorderSeatInputs(_rawScoreInputs, seatMoves);
+                        Array.Fill(_avatarPreviewKeys, null);
                     }
                     bindingsChanged |= !beforeBindings.SequenceEqual(_settings.Players
-                        .Select(player => (player.Seat, player.AccountId, player.TotalPoints)));
+                        .Select(AccountBindingSnapshot.From));
                 }
             }
             catch (InvalidDataException exception)
@@ -252,6 +255,33 @@ public partial class MainWindow : Window
             var newSeat = seatMoves.TryGetValue(oldSeat, out var movedSeat) ? movedSeat : oldSeat;
             values[newSeat] = previous[oldSeat];
         }
+    }
+
+    private sealed record AccountBindingSnapshot(
+        int Seat,
+        long AccountId,
+        decimal TotalPoints,
+        bool NameLocked,
+        string ManualName,
+        AvatarDisplayMode AvatarMode,
+        string AvatarPath,
+        AvatarFrameDisplayMode AvatarFrameMode,
+        string AvatarFramePath,
+        bool TeamNameLocked,
+        string TeamName)
+    {
+        public static AccountBindingSnapshot From(PlayerSlotSettings player) => new(
+            player.Seat,
+            player.AccountId,
+            player.TotalPoints,
+            player.NameLocked,
+            player.ManualName,
+            player.AvatarMode,
+            player.AvatarPath,
+            player.AvatarFrameMode,
+            player.AvatarFramePath,
+            player.TeamNameLocked,
+            player.TeamName);
     }
 
     private void MainWindow_Closed(object? sender, EventArgs e)

@@ -189,38 +189,91 @@ public sealed class V27Settings
         LeftBoardFocusY = 50;
     }
 
-    public bool BindTotalsToPlayers(IReadOnlyList<BroadcastPlayerState> players)
+    public bool BindPlayersToAccounts(IReadOnlyList<BroadcastPlayerState> players)
     {
         ArgumentNullException.ThrowIfNull(players);
         Normalize();
         var byAccount = Players
             .Where(player => player.AccountId > 0)
             .GroupBy(player => player.AccountId)
-            .ToDictionary(group => group.Key, group => group.First().TotalPoints);
-        var bindings = Players.Select(player => (player.AccountId, player.TotalPoints)).ToArray();
+            .ToDictionary(group => group.Key, group => AccountPlayerSnapshot.From(group.First()));
+        var bindings = Players.Select(AccountPlayerSnapshot.From).ToArray();
 
         foreach (var player in players.Where(player => player.Seat is >= 0 and <= 3))
         {
             var target = Players[player.Seat];
             if (player.AccountId > 0 && byAccount.TryGetValue(player.AccountId, out var matched))
             {
-                target.AccountId = player.AccountId;
-                target.TotalPoints = matched;
+                matched.CopyTo(target);
             }
             else if (player.AccountId > 0)
             {
-                // 新账号不能继承该座位上前一名选手的累计点。
+                // 新账号不能继承该座位上前一名选手的累计点或其他资料。
                 target.AccountId = player.AccountId;
                 target.TotalPoints = 0m;
+                ClearAccountProfile(target);
             }
         }
 
-        return !bindings.SequenceEqual(Players.Select(player => (player.AccountId, player.TotalPoints)));
+        return !bindings.SequenceEqual(Players.Select(AccountPlayerSnapshot.From));
     }
 
     public bool IsSettlementApplied(string gameUuid) =>
         !string.IsNullOrWhiteSpace(gameUuid) &&
         string.Equals(LastSettlementGameUuid, gameUuid, StringComparison.Ordinal);
+
+    private static void ClearAccountProfile(PlayerSlotSettings player)
+    {
+        player.NameLocked = false;
+        player.ManualName = string.Empty;
+        player.AvatarMode = AvatarDisplayMode.Image;
+        player.AvatarPath = string.Empty;
+        player.AvatarFrameMode = AvatarFrameDisplayMode.Default;
+        player.AvatarFramePath = string.Empty;
+        player.TeamNameLocked = false;
+        player.TeamName = string.Empty;
+    }
+
+    private sealed record AccountPlayerSnapshot(
+        int Seat,
+        long AccountId,
+        decimal TotalPoints,
+        bool NameLocked,
+        string ManualName,
+        AvatarDisplayMode AvatarMode,
+        string AvatarPath,
+        AvatarFrameDisplayMode AvatarFrameMode,
+        string AvatarFramePath,
+        bool TeamNameLocked,
+        string TeamName)
+    {
+        public static AccountPlayerSnapshot From(PlayerSlotSettings player) => new(
+            player.Seat,
+            player.AccountId,
+            player.TotalPoints,
+            player.NameLocked,
+            player.ManualName,
+            player.AvatarMode,
+            player.AvatarPath,
+            player.AvatarFrameMode,
+            player.AvatarFramePath,
+            player.TeamNameLocked,
+            player.TeamName);
+
+        public void CopyTo(PlayerSlotSettings player)
+        {
+            player.AccountId = AccountId;
+            player.TotalPoints = TotalPoints;
+            player.NameLocked = NameLocked;
+            player.ManualName = ManualName;
+            player.AvatarMode = AvatarMode;
+            player.AvatarPath = AvatarPath;
+            player.AvatarFrameMode = AvatarFrameMode;
+            player.AvatarFramePath = AvatarFramePath;
+            player.TeamNameLocked = TeamNameLocked;
+            player.TeamName = TeamName;
+        }
+    }
 
     private static List<PlayerSlotSettings> CreateDefaultPlayers() =>
         Enumerable.Range(0, 4).Select(seat => new PlayerSlotSettings { Seat = seat }).ToList();
@@ -288,7 +341,7 @@ public sealed class LiveStateReducer
         _connectionText = text;
     }
 
-    public bool Apply(BroadcastApiState state, bool bindPlayerTotals = false)
+    public bool Apply(BroadcastApiState state, bool bindPlayerAccounts = false)
     {
         _connected = true;
         _connectionText = state.Observe is null ? "API 已连接，当前未观战" : "API 已连接，正在观战";
@@ -308,8 +361,8 @@ public sealed class LiveStateReducer
                 return false;
             finalScores = validatedFinalScores;
         }
-        if (bindPlayerTotals)
-            _settings.BindTotalsToPlayers(observe.Players);
+        if (bindPlayerAccounts)
+            _settings.BindPlayersToAccounts(observe.Players);
         var scoreChanged = false;
         foreach (var player in observe.Players)
         {
@@ -529,6 +582,25 @@ public sealed class PlayerPresentationDraft
     public bool IsNameRestorePending(int seat) => SlotAt(seat).RestoreNameFromApi;
     public bool IsScoreRestorePending(int seat) => SlotAt(seat).RestoreScoreFromApi;
     public bool IsTeamRestorePending(int seat) => SlotAt(seat).RestoreTeamFromApi;
+
+    public void Rebind(IReadOnlyDictionary<int, int> seatMoves)
+    {
+        ArgumentNullException.ThrowIfNull(seatMoves);
+        var reordered = new Slot[4];
+        var assigned = new HashSet<int>();
+        for (var oldSeat = 0; oldSeat < _slots.Length; oldSeat++)
+        {
+            var newSeat = seatMoves.TryGetValue(oldSeat, out var movedSeat) ? movedSeat : oldSeat;
+            if (newSeat is < 0 or > 3)
+                throw new ArgumentOutOfRangeException(nameof(seatMoves));
+            if (!assigned.Add(newSeat))
+                throw new ArgumentException("选手资料草稿的换座目标必须唯一。", nameof(seatMoves));
+            reordered[newSeat] = _slots[oldSeat];
+        }
+        Array.Copy(reordered, _slots, reordered.Length);
+        if (seatMoves.Any(item => item.Key != item.Value))
+            _revision++;
+    }
 
     public string GetName(int seat, string fallback)
     {

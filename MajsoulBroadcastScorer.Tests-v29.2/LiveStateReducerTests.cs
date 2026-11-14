@@ -269,24 +269,39 @@ public sealed class LiveStateReducerTests
             Player(0, accountId: 101),
             Player(1, accountId: 102),
             Player(2, accountId: 103),
-            Player(3, accountId: 104)), bindPlayerTotals: true);
+            Player(3, accountId: 104)), bindPlayerAccounts: true);
         settings.Players[0].TotalPoints = 12.3m;
         settings.Players[1].TotalPoints = -4.6m;
         settings.Players[2].TotalPoints = 7.9m;
         settings.Players[3].TotalPoints = 0m;
+        settings.Players[0].NameLocked = true;
+        settings.Players[0].ManualName = "选手甲";
+        settings.Players[0].AvatarPath = "assets/a.png";
+        settings.Players[0].AvatarFramePath = "assets/a-frame.png";
+        settings.Players[0].AvatarFrameMode = AvatarFrameDisplayMode.Custom;
+        settings.Players[0].TeamNameLocked = true;
+        settings.Players[0].TeamName = "甲队";
 
         reducer.Apply(State(
             Player(0, accountId: 103),
             Player(1, accountId: 101),
             Player(2, accountId: 104),
             Player(3, accountId: 102),
-            gameUuid: "game-2"), bindPlayerTotals: true);
+            gameUuid: "game-2"), bindPlayerAccounts: true);
 
         Assert.Equal(
             [(103L, 7.9m), (101L, 12.3m), (104L, 0m), (102L, -4.6m)],
             settings.Players.Select(player => (player.AccountId, player.TotalPoints)));
         Assert.Equal([7.9m, 12.3m, 0m, -4.6m],
             reducer.Current.Players.Select(player => player.TotalPoints));
+        var moved = settings.Players[1];
+        Assert.True(moved.NameLocked);
+        Assert.Equal("选手甲", moved.ManualName);
+        Assert.Equal("assets/a.png", moved.AvatarPath);
+        Assert.Equal("assets/a-frame.png", moved.AvatarFramePath);
+        Assert.Equal(AvatarFrameDisplayMode.Custom, moved.AvatarFrameMode);
+        Assert.True(moved.TeamNameLocked);
+        Assert.Equal("甲队", moved.TeamName);
 
         var loaded = V27SettingsJson.Deserialize(V27SettingsJson.Serialize(settings));
         Assert.Equal(
@@ -303,18 +318,32 @@ public sealed class LiveStateReducerTests
             Player(0, accountId: 101),
             Player(1, accountId: 102),
             Player(2, accountId: 103),
-            Player(3, accountId: 104)), bindPlayerTotals: true);
+            Player(3, accountId: 104)), bindPlayerAccounts: true);
         settings.Players[0].TotalPoints = 25m;
+        settings.Players[0].NameLocked = true;
+        settings.Players[0].ManualName = "旧选手";
+        settings.Players[0].AvatarPath = "assets/old.png";
+        settings.Players[0].AvatarFramePath = "assets/old-frame.png";
+        settings.Players[0].AvatarFrameMode = AvatarFrameDisplayMode.Custom;
+        settings.Players[0].TeamNameLocked = true;
+        settings.Players[0].TeamName = "旧队";
 
         reducer.Apply(State(
             Player(0, accountId: 205),
             Player(1, accountId: 102),
             Player(2, accountId: 103),
             Player(3, accountId: 104),
-            gameUuid: "game-2"), bindPlayerTotals: true);
+            gameUuid: "game-2"), bindPlayerAccounts: true);
 
         Assert.Equal(205, settings.Players[0].AccountId);
         Assert.Equal(0m, settings.Players[0].TotalPoints);
+        Assert.False(settings.Players[0].NameLocked);
+        Assert.Equal(string.Empty, settings.Players[0].ManualName);
+        Assert.Equal(string.Empty, settings.Players[0].AvatarPath);
+        Assert.Equal(string.Empty, settings.Players[0].AvatarFramePath);
+        Assert.Equal(AvatarFrameDisplayMode.Default, settings.Players[0].AvatarFrameMode);
+        Assert.False(settings.Players[0].TeamNameLocked);
+        Assert.Equal(string.Empty, settings.Players[0].TeamName);
     }
 
     [Fact]
@@ -328,6 +357,26 @@ public sealed class LiveStateReducerTests
         Assert.Equal(12.3m, draft.Get(1));
         Assert.False(draft.IsDirty(0));
         Assert.True(draft.IsDirty(1));
+    }
+
+    [Fact]
+    public void PlayerPresentationDraft_RebindMovesPendingProfileWithThePlayer()
+    {
+        var draft = new PlayerPresentationDraft();
+        draft.StageName(0, "手工名");
+        draft.StageAvatarPath(0, "assets/player.png");
+        draft.StageAvatarFramePath(0, "assets/player-frame.png");
+        draft.StageAvatarFrameMode(0, AvatarFrameDisplayMode.Custom);
+        draft.StageTeamName(0, "选手队伍");
+
+        draft.Rebind(new Dictionary<int, int> { [0] = 1, [1] = 0 });
+
+        Assert.Equal(string.Empty, draft.GetName(0, string.Empty));
+        Assert.Equal("手工名", draft.GetName(1, string.Empty));
+        Assert.Equal("assets/player.png", draft.GetAvatarPath(1, string.Empty));
+        Assert.Equal("assets/player-frame.png", draft.GetAvatarFramePath(1, string.Empty));
+        Assert.Equal(AvatarFrameDisplayMode.Custom, draft.GetAvatarFrameMode(1, AvatarFrameDisplayMode.Default));
+        Assert.Equal("选手队伍", draft.GetTeamName(1, string.Empty));
     }
 
     [Fact]
