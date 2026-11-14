@@ -77,6 +77,7 @@ public sealed class AssetLayout
 public sealed class PlayerSlotSettings
 {
     public int Seat { get; set; }
+    public long AccountId { get; set; }
     public bool NameLocked { get; set; }
     public string ManualName { get; set; } = string.Empty;
     public bool ScoreLocked { get; set; }
@@ -186,6 +187,35 @@ public sealed class V27Settings
         LeftBoardFocusY = 50;
     }
 
+    public bool BindTotalsToPlayers(IReadOnlyList<BroadcastPlayerState> players)
+    {
+        ArgumentNullException.ThrowIfNull(players);
+        Normalize();
+        var byAccount = Players
+            .Where(player => player.AccountId > 0)
+            .GroupBy(player => player.AccountId)
+            .ToDictionary(group => group.Key, group => group.First().TotalPoints);
+        var bindings = Players.Select(player => (player.AccountId, player.TotalPoints)).ToArray();
+
+        foreach (var player in players.Where(player => player.Seat is >= 0 and <= 3))
+        {
+            var target = Players[player.Seat];
+            if (player.AccountId > 0 && byAccount.TryGetValue(player.AccountId, out var matched))
+            {
+                target.AccountId = player.AccountId;
+                target.TotalPoints = matched;
+            }
+            else if (player.AccountId > 0)
+            {
+                // 新账号不能继承该座位上前一名选手的累计点。
+                target.AccountId = player.AccountId;
+                target.TotalPoints = 0m;
+            }
+        }
+
+        return !bindings.SequenceEqual(Players.Select(player => (player.AccountId, player.TotalPoints)));
+    }
+
     private static List<PlayerSlotSettings> CreateDefaultPlayers() =>
         Enumerable.Range(0, 4).Select(seat => new PlayerSlotSettings { Seat = seat }).ToList();
 }
@@ -250,7 +280,7 @@ public sealed class LiveStateReducer
         _connectionText = text;
     }
 
-    public bool Apply(BroadcastApiState state)
+    public bool Apply(BroadcastApiState state, bool bindPlayerTotals = false)
     {
         _connected = true;
         _connectionText = state.Observe is null ? "API 已连接，当前未观战" : "API 已连接，正在观战";
@@ -269,6 +299,8 @@ public sealed class LiveStateReducer
                 return false;
             finalScores = validatedFinalScores;
         }
+        if (bindPlayerTotals)
+            _settings.BindTotalsToPlayers(observe.Players);
         var scoreChanged = false;
         foreach (var player in observe.Players)
         {
@@ -411,6 +443,28 @@ public sealed class TotalPointsDraft
     }
 
     public bool IsDirty(int seat) => _dirty[ValidateSeat(seat)];
+
+    public void Rebind(IReadOnlyDictionary<int, int> seatMoves)
+    {
+        ArgumentNullException.ThrowIfNull(seatMoves);
+        var values = new decimal[4];
+        var dirty = new bool[4];
+        var assigned = new HashSet<int>();
+        for (var oldSeat = 0; oldSeat < 4; oldSeat++)
+        {
+            var newSeat = seatMoves.TryGetValue(oldSeat, out var movedSeat) ? movedSeat : oldSeat;
+            newSeat = ValidateSeat(newSeat);
+            if (!assigned.Add(newSeat))
+                throw new ArgumentException("累计精算点的换座目标必须唯一。", nameof(seatMoves));
+            values[newSeat] = _values[oldSeat];
+            dirty[newSeat] = _dirty[oldSeat];
+        }
+
+        Array.Copy(values, _values, values.Length);
+        Array.Copy(dirty, _dirty, dirty.Length);
+        if (seatMoves.Any(item => item.Key != item.Value))
+            _revision++;
+    }
 
     public void Apply(V27Settings settings) => ApplyTo(settings, true);
 

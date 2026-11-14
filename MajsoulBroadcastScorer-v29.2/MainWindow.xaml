@@ -353,7 +353,7 @@
         <TextBlock Text="从开始观战时记录逐局结算。未接收到的详情显示“未提供”，不会根据分数变化猜测。"
                    TextWrapping="Wrap" Foreground="#AAB3C0" Margin="3,0,3,12"/>
         <Button Content="按当前结果填入下一场累计" Click="StageProjectedTotals_Click" HorizontalAlignment="Left"/>
-        <TextBlock Margin="3,8,3,0" Foreground="#AAB3C0" TextWrapping="Wrap" Text="填入后点击“确认修改”，即可同步选手资料与精算点。"/>
+        <TextBlock Margin="3,8,3,0" Foreground="#AAB3C0" TextWrapping="Wrap" Text="填入后点击“确认修改”；下一场换座时，累计精算点会按雀魂账号跟随选手。"/>
       </StackPanel>
 
       <Grid x:Name="PreviewContent">

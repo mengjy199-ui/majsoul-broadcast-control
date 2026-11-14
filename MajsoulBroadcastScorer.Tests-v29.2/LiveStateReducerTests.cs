@@ -229,6 +229,76 @@ public sealed class LiveStateReducerTests
     }
 
     [Fact]
+    public void TotalPointsAndAccountBindingsFollowPlayersAcrossSeatRotation()
+    {
+        var settings = new V27Settings();
+        var reducer = new LiveStateReducer(settings);
+        reducer.Apply(State(
+            Player(0, accountId: 101),
+            Player(1, accountId: 102),
+            Player(2, accountId: 103),
+            Player(3, accountId: 104)), bindPlayerTotals: true);
+        settings.Players[0].TotalPoints = 12.3m;
+        settings.Players[1].TotalPoints = -4.6m;
+        settings.Players[2].TotalPoints = 7.9m;
+        settings.Players[3].TotalPoints = 0m;
+
+        reducer.Apply(State(
+            Player(0, accountId: 103),
+            Player(1, accountId: 101),
+            Player(2, accountId: 104),
+            Player(3, accountId: 102),
+            gameUuid: "game-2"), bindPlayerTotals: true);
+
+        Assert.Equal(
+            [(103L, 7.9m), (101L, 12.3m), (104L, 0m), (102L, -4.6m)],
+            settings.Players.Select(player => (player.AccountId, player.TotalPoints)));
+        Assert.Equal([7.9m, 12.3m, 0m, -4.6m],
+            reducer.Current.Players.Select(player => player.TotalPoints));
+
+        var loaded = V27SettingsJson.Deserialize(V27SettingsJson.Serialize(settings));
+        Assert.Equal(
+            [103L, 101L, 104L, 102L],
+            loaded.Players.Select(player => player.AccountId));
+    }
+
+    [Fact]
+    public void UnknownAccountDoesNotInheritPreviousPlayersTotalPoints()
+    {
+        var settings = new V27Settings();
+        var reducer = new LiveStateReducer(settings);
+        reducer.Apply(State(
+            Player(0, accountId: 101),
+            Player(1, accountId: 102),
+            Player(2, accountId: 103),
+            Player(3, accountId: 104)), bindPlayerTotals: true);
+        settings.Players[0].TotalPoints = 25m;
+
+        reducer.Apply(State(
+            Player(0, accountId: 205),
+            Player(1, accountId: 102),
+            Player(2, accountId: 103),
+            Player(3, accountId: 104),
+            gameUuid: "game-2"), bindPlayerTotals: true);
+
+        Assert.Equal(205, settings.Players[0].AccountId);
+        Assert.Equal(0m, settings.Players[0].TotalPoints);
+    }
+
+    [Fact]
+    public void TotalPointsDraft_RebindMovesPendingValuesToNewSeats()
+    {
+        var draft = new TotalPointsDraft(new V27Settings());
+        draft.Set(0, 12.3m);
+
+        draft.Rebind(new Dictionary<int, int> { [0] = 1, [1] = 0 });
+
+        Assert.Equal(12.3m, draft.Get(1));
+        Assert.False(draft.IsDirty(0));
+        Assert.True(draft.IsDirty(1));
+    }
+
+    [Fact]
     public void PlayerPresentationDraft_DoesNotChangeSettingsUntilApplied()
     {
         var settings = new V27Settings();
@@ -296,9 +366,11 @@ public sealed class LiveStateReducerTests
         int seat,
         string? name = null,
         int score = 25000,
-        int wind = -1) => new()
+        int wind = -1,
+        long accountId = 0) => new()
         {
             Seat = seat,
+            AccountId = accountId,
             Nickname = name ?? $"P{seat}",
             Score = score,
             Wind = wind,
@@ -312,7 +384,8 @@ public sealed class LiveStateReducerTests
         BroadcastPlayerState p3,
         string mode = "realtime",
         int? riichiSticks = null,
-        long serverTime = 0)
+        long serverTime = 0,
+        string gameUuid = "game-1")
     {
         var players = new[] { p0, p1, p2, p3 };
         var missing = 100000 - players.Sum(player => player.Score);
@@ -322,7 +395,7 @@ public sealed class LiveStateReducerTests
             ServerTime = serverTime,
             Observe = new BroadcastObserveState
             {
-                GameUuid = "game-1",
+                GameUuid = gameUuid,
                 Round = new BroadcastRoundInfo { Chang = 0, Ju = 0, Ben = 0 },
                 RiichiSticks = riichiSticks ?? missing / 1000,
                 Players = players

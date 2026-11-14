@@ -200,11 +200,34 @@ public partial class MainWindow : Window
         if (ready.Count == 0)
             return false;
 
+        var bindingsChanged = false;
         foreach (var state in ready)
         {
+            var beforeBindings = _settings.Players
+                .Select(player => (player.Seat, player.AccountId, player.TotalPoints))
+                .ToArray();
             try
             {
-                _reducer.Apply(state);
+                if (_reducer.Apply(state, bindPlayerTotals: true))
+                {
+                    var currentSeatByAccount = _settings.Players
+                        .Where(player => player.AccountId > 0)
+                        .ToDictionary(player => player.AccountId, player => player.Seat);
+                    var seatMoves = beforeBindings
+                        .Where(player => player.AccountId > 0 &&
+                            currentSeatByAccount.TryGetValue(player.AccountId, out var seat) &&
+                            seat != player.Seat)
+                        .ToDictionary(
+                            player => player.Seat,
+                            player => currentSeatByAccount[player.AccountId]);
+                    if (seatMoves.Count > 0)
+                    {
+                        _totalPointsDraft.Rebind(seatMoves);
+                        ReorderSeatInputs(_rawTotalInputs, seatMoves);
+                    }
+                    bindingsChanged |= !beforeBindings.SequenceEqual(_settings.Players
+                        .Select(player => (player.Seat, player.AccountId, player.TotalPoints)));
+                }
             }
             catch (InvalidDataException exception)
             {
@@ -216,7 +239,19 @@ public partial class MainWindow : Window
 
         _lastPublishedAt = DateTimeOffset.Now;
         RefreshAll();
+        if (bindingsChanged)
+            _ = SaveRefreshAsync();
         return true;
+    }
+
+    private static void ReorderSeatInputs(string?[] values, IReadOnlyDictionary<int, int> seatMoves)
+    {
+        var previous = (string?[])values.Clone();
+        for (var oldSeat = 0; oldSeat < values.Length; oldSeat++)
+        {
+            var newSeat = seatMoves.TryGetValue(oldSeat, out var movedSeat) ? movedSeat : oldSeat;
+            values[newSeat] = previous[oldSeat];
+        }
     }
 
     private void MainWindow_Closed(object? sender, EventArgs e)
