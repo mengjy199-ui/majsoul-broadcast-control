@@ -119,10 +119,12 @@ public static class BroadcastApiProtocol
             throw new InvalidDataException("场、局或本场数超出范围。");
         if (observe.RiichiSticks is < 0 or > 100)
             throw new InvalidDataException("供托数量超出范围。");
-        if (observe.Players.Count != 4 ||
-            observe.Players.Select(player => player.Seat).Order().SequenceEqual([0, 1, 2, 3]) is false ||
-            observe.Players.Any(player => player.Wind is < -1 or > 3))
-            throw new InvalidDataException("观战状态必须包含 seat 0..3 四名唯一玩家。");
+        var playerCount = observe.Players.Count;
+        if (playerCount is not (3 or 4) ||
+            !observe.Players.Select(player => player.Seat).Order().SequenceEqual(Enumerable.Range(0, playerCount)) ||
+            observe.Players.Any(player => player.Wind < -1 || player.Wind >= playerCount) ||
+            observe.Players.Where(player => player.AccountId > 0).GroupBy(player => player.AccountId).Any(group => group.Count() > 1))
+            throw new InvalidDataException("观战状态必须包含三个或四个连续且唯一的座位。");
         if (observe.Players.Any(player => player.Score is < -100000 or > 200000 || player.Score % 100 != 0))
             throw new InvalidDataException("观战状态包含无效分数。");
 
@@ -132,14 +134,16 @@ public static class BroadcastApiProtocol
 
     public static bool TryGetFinalScores(BroadcastObserveState observe, out int[] scores)
     {
-        scores = new int[4];
-        if (!observe.Ended || observe.FinalRanking.Count != 4 ||
-            !observe.FinalRanking.Select(item => item.Seat).Order().SequenceEqual([0, 1, 2, 3]) ||
-            observe.FinalRanking.Any(item => item.Rank is < 1 or > 4 ||
+        var playerCount = observe.Players.Count;
+        scores = [];
+        if (!observe.Ended || playerCount is not (3 or 4) || observe.FinalRanking.Count != playerCount ||
+            !observe.FinalRanking.Select(item => item.Seat).Order().SequenceEqual(Enumerable.Range(0, playerCount)) ||
+            observe.FinalRanking.Any(item => item.Rank < 1 || item.Rank > playerCount ||
                 item.TotalPoint is < -100000 or > 200000 || item.TotalPoint % 100 != 0) ||
-            observe.FinalRanking.Sum(item => item.TotalPoint) != 100000)
+            observe.FinalRanking.Sum(item => item.TotalPoint) != (playerCount == 3 ? 105000 : 100000))
             return false;
 
+        scores = new int[playerCount];
         foreach (var item in observe.FinalRanking)
             scores[item.Seat] = item.TotalPoint;
         return true;

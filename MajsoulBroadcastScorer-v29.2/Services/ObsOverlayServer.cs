@@ -22,7 +22,10 @@ public sealed record ObsPlayerState(
     long AvatarVersion,
     string AvatarFrameMode,
     bool HasAvatarFrame,
-    long AvatarFrameVersion);
+    long AvatarFrameVersion)
+{
+    public decimal? SanmaCumulative { get; init; }
+}
 
 public sealed record ObsReversalPlayerState(
     int Seat,
@@ -78,6 +81,7 @@ public sealed record ObsOverlayState(
     public long Revision { get; init; }
     public string VerticalNameMode { get; init; } = "nickname";
     public string VerticalNumberMode { get; init; } = "totalPoints";
+    public bool SanmaShowCumulative { get; init; }
 }
 
 public sealed class ObsOverlayServer : IDisposable

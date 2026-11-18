@@ -153,11 +153,21 @@
             <Grid.ColumnDefinitions><ColumnDefinition Width="92"/><ColumnDefinition Width="270"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
             <TextBlock Text="OBS 样式" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center"/>
             <ComboBox x:Name="OverlayStyleComboBox" Grid.Column="1" SelectedValuePath="Content" SelectionChanged="OverlayStyle_Changed" AutomationProperties.Name="OBS 样式">
-              <ComboBoxItem Content="竖排头像"/><ComboBoxItem Content="竖排头像·芙莉莲"/><ComboBoxItem Content="竖排头像·赛事展示"/>
+              <ComboBoxItem Content="竖排头像"/><ComboBoxItem Content="竖排头像·芙莉莲"/>
+              <ComboBoxItem Content="竖排头像‧芙莉莲‧三人南"/><ComboBoxItem Content="竖排头像·赛事展示"/>
               <ComboBoxItem Content="队伍模式"/><ComboBoxItem Content="分差与逆转"/>
             </ComboBox>
             <TextBlock x:Name="OverlayStyleStatusText" Grid.Column="2" Margin="20,0,0,0" FontSize="12" Foreground="{StaticResource AppMutedTextBrush}" VerticalAlignment="Center" TextWrapping="Wrap"/>
           </Grid>
+        </Border>
+
+        <Border x:Name="SanmaDisplayControls" Background="{StaticResource AppSurfaceBrush}" BorderBrush="{StaticResource AppBorderBrush}"
+                BorderThickness="1" CornerRadius="10" Padding="18,12" Margin="0,0,0,14" Visibility="Collapsed">
+          <WrapPanel VerticalAlignment="Center">
+            <Button x:Name="SanmaCurrentButton" Content="当前分数" Click="SanmaDisplay_Click"/>
+            <Button x:Name="SanmaCumulativeButton" Content="累计得失分" Click="SanmaDisplay_Click" Margin="8,3,12,3"/>
+            <TextBlock x:Name="SanmaStatusText" VerticalAlignment="Center" Foreground="{StaticResource AppMutedTextBrush}"/>
+          </WrapPanel>
         </Border>
 
         <GroupBox x:Name="VerticalMatchSettingsGroup" Header="赛事展示内容" Margin="0,0,0,14" Padding="18,14">
@@ -192,7 +202,7 @@
           <CheckBox x:Name="ShowTotalCheckBox" Grid.Column="1" Content="OBS 显示精算点" Checked="ShowTotal_Changed" Unchecked="ShowTotal_Changed"/>
         </Grid>
         <ItemsControl x:Name="PlayerEditorsControl" HorizontalContentAlignment="Stretch" Margin="-6,0,-6,4">
-          <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Rows="1" Columns="4"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+          <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Rows="1"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
           <ItemsControl.ItemTemplate>
             <DataTemplate>
               <Border Style="{StaticResource PlayerCardStyle}">
@@ -223,9 +233,11 @@
                   <TextBlock Text="持有点数" Foreground="{StaticResource AppMutedTextBrush}" FontSize="12"/>
                   <TextBlock Text="{Binding ScoreDisplay}" FontFamily="{StaticResource NumericFont}" FontSize="38" Margin="0,4,0,14"/>
                   <Border Height="1" Background="#2D3C4C" Margin="0,0,0,14"/>
-                  <TextBlock Text="此前累计精算点" Foreground="{StaticResource AppMutedTextBrush}" FontSize="12" Margin="0,0,0,8"/>
-                  <TextBox Text="{Binding Total, UpdateSourceTrigger=PropertyChanged}" FontSize="18" FontFamily="{StaticResource NumericFont}" Height="40" Margin="0,0,0,16"
-                           AutomationProperties.Name="{Binding SeatLabel, StringFormat={}{0} 此前累计精算点}"/>
+                  <StackPanel Visibility="{Binding Tag, RelativeSource={RelativeSource AncestorType=ItemsControl}}">
+                    <TextBlock Text="此前累计精算点" Foreground="{StaticResource AppMutedTextBrush}" FontSize="12" Margin="0,0,0,8"/>
+                    <TextBox Text="{Binding Total, UpdateSourceTrigger=PropertyChanged}" FontSize="18" FontFamily="{StaticResource NumericFont}" Height="40" Margin="0,0,0,16"
+                             AutomationProperties.Name="{Binding SeatLabel, StringFormat={}{0} 此前累计精算点}"/>
+                  </StackPanel>
                   <Grid>
                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                     <Button Content="上传头像" Click="UploadAvatar_Click" ToolTip="{Binding AvatarStatus}" Padding="8,7" FontSize="12"

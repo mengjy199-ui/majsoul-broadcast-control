@@ -29,7 +29,8 @@ public enum OverlayLayoutStyle
     GapConditions,
     TeamMode,
     VerticalMatch,
-    FrierenVerticalAvatar
+    FrierenVerticalAvatar,
+    FrierenSanma
 }
 
 public enum VerticalNameContent { PlayerName, TeamName }
@@ -104,6 +105,7 @@ public sealed class V27Settings
     public OverlayLayoutStyle OverlayStyle { get; set; } = OverlayLayoutStyle.HorizontalPlayers;
     public VerticalNameContent VerticalName { get; set; } = VerticalNameContent.TeamName;
     public VerticalNumberContent VerticalNumber { get; set; } = VerticalNumberContent.CurrentScore;
+    public bool SanmaShowCumulative { get; set; }
     public string LastSettlementGameUuid { get; set; } = string.Empty;
     public int GapSelectedSeat { get; set; }
     public ReversalTargetMode GapTargetMode { get; set; } = ReversalTargetMode.PreviousRank;
@@ -198,6 +200,14 @@ public sealed class V27Settings
             .GroupBy(player => player.AccountId)
             .ToDictionary(group => group.Key, group => AccountPlayerSnapshot.From(group.First()));
         var bindings = Players.Select(AccountPlayerSnapshot.From).ToArray();
+        var occupiedAccounts = players.Where(player => player.AccountId > 0)
+            .Select(player => player.AccountId).ToHashSet();
+        foreach (var inactive in Players.Skip(players.Count).Where(player => occupiedAccounts.Contains(player.AccountId)))
+        {
+            inactive.AccountId = 0;
+            inactive.TotalPoints = 0;
+            ClearAccountProfile(inactive);
+        }
 
         foreach (var player in players.Where(player => player.Seat is >= 0 and <= 3))
         {
@@ -208,10 +218,12 @@ public sealed class V27Settings
             }
             else if (player.AccountId > 0)
             {
-                // 新账号不能继承该座位上前一名选手的累计点或其他资料。
+                if (target.AccountId > 0)
+                {
+                    target.TotalPoints = 0m;
+                    ClearAccountProfile(target);
+                }
                 target.AccountId = player.AccountId;
-                target.TotalPoints = 0m;
-                ClearAccountProfile(target);
             }
         }
 
@@ -290,7 +302,10 @@ public sealed record DisplayPlayerState(
     string AvatarPath,
     AvatarFrameDisplayMode AvatarFrameMode,
     string AvatarFramePath,
-    string TeamName);
+    string TeamName)
+{
+    public long AccountId { get; init; }
+}
 
 public sealed record LiveDisplayState(
     bool ApiConnected,
@@ -319,6 +334,7 @@ public sealed class LiveStateReducer
     private int _honba;
     private int _riichiSticks;
     private bool _ended;
+    private int _playerCount = 4;
     private long _lastScoreUpdateUnixMs;
 
     public LiveStateReducer(V27Settings settings)
@@ -348,7 +364,8 @@ public sealed class LiveStateReducer
         if (state.Observe is null)
         {
             _observing = false;
-            _ended = false;
+            if (_playerCount != 3)
+                _ended = false;
             return false;
         }
 
@@ -385,6 +402,7 @@ public sealed class LiveStateReducer
         }
 
         _observing = true;
+        _playerCount = observe.Players.Count;
         _gameUuid = observe.GameUuid;
         _roundLabel = observe.Round.Label;
         _honba = observe.Round.Ben;
@@ -407,7 +425,7 @@ public sealed class LiveStateReducer
 
     private LiveDisplayState Build()
     {
-        var players = _settings.Players.OrderBy(player => player.Seat).Select(setting =>
+        var players = _settings.Players.Take(_playerCount).Select(setting =>
         {
             var api = _memory[setting.Seat];
             return new DisplayPlayerState(
@@ -423,7 +441,10 @@ public sealed class LiveStateReducer
                 setting.AvatarPath,
                 setting.AvatarFrameMode,
                 setting.AvatarFramePath,
-                setting.TeamNameLocked ? setting.TeamName : api.TeamName);
+                setting.TeamNameLocked ? setting.TeamName : api.TeamName)
+            {
+                AccountId = api.AccountId
+            };
         }).ToArray();
 
         return new LiveDisplayState(
@@ -514,7 +535,7 @@ public sealed class TotalPointsDraft
 
     public bool IsDirty(int seat) => _dirty[ValidateSeat(seat)];
 
-    public void Rebind(IReadOnlyDictionary<int, int> seatMoves)
+    public void Rebind(IReadOnlyDictionary<int, int> seatMoves, IReadOnlySet<int>? departed = null)
     {
         ArgumentNullException.ThrowIfNull(seatMoves);
         var values = new decimal[4];
@@ -522,6 +543,8 @@ public sealed class TotalPointsDraft
         var assigned = new HashSet<int>();
         for (var oldSeat = 0; oldSeat < 4; oldSeat++)
         {
+            if (departed?.Contains(oldSeat) == true)
+                continue;
             var newSeat = seatMoves.TryGetValue(oldSeat, out var movedSeat) ? movedSeat : oldSeat;
             newSeat = ValidateSeat(newSeat);
             if (!assigned.Add(newSeat))
@@ -532,7 +555,12 @@ public sealed class TotalPointsDraft
 
         Array.Copy(values, _values, values.Length);
         Array.Copy(dirty, _dirty, dirty.Length);
-        if (seatMoves.Any(item => item.Key != item.Value))
+        if (_sourceSettlementGameUuid is not null && _dirty.Any(value => !value))
+        {
+            Array.Fill(_dirty, false);
+            _sourceSettlementGameUuid = null;
+        }
+        if (seatMoves.Count > 0 || departed?.Count > 0)
             _revision++;
     }
 
@@ -583,13 +611,15 @@ public sealed class PlayerPresentationDraft
     public bool IsScoreRestorePending(int seat) => SlotAt(seat).RestoreScoreFromApi;
     public bool IsTeamRestorePending(int seat) => SlotAt(seat).RestoreTeamFromApi;
 
-    public void Rebind(IReadOnlyDictionary<int, int> seatMoves)
+    public void Rebind(IReadOnlyDictionary<int, int> seatMoves, IReadOnlySet<int>? departed = null)
     {
         ArgumentNullException.ThrowIfNull(seatMoves);
-        var reordered = new Slot[4];
+        var reordered = Enumerable.Range(0, 4).Select(_ => new Slot()).ToArray();
         var assigned = new HashSet<int>();
         for (var oldSeat = 0; oldSeat < _slots.Length; oldSeat++)
         {
+            if (departed?.Contains(oldSeat) == true)
+                continue;
             var newSeat = seatMoves.TryGetValue(oldSeat, out var movedSeat) ? movedSeat : oldSeat;
             if (newSeat is < 0 or > 3)
                 throw new ArgumentOutOfRangeException(nameof(seatMoves));
@@ -598,7 +628,7 @@ public sealed class PlayerPresentationDraft
             reordered[newSeat] = _slots[oldSeat];
         }
         Array.Copy(reordered, _slots, reordered.Length);
-        if (seatMoves.Any(item => item.Key != item.Value))
+        if (seatMoves.Count > 0 || departed?.Count > 0)
             _revision++;
     }
 

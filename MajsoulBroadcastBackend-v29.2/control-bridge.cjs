@@ -133,6 +133,9 @@ function installRoundResultCapture({ broadcast, observe, liveObserve, logger }) 
   const numbers = (value) => Array.isArray(value) && value.every((item) => number(item) !== null) ? value.slice() : [];
   const publicCopy = (value) => value === undefined ? null : JSON.parse(JSON.stringify(value));
   const pick = (object, fields) => Object.fromEntries(fields.filter((key) => object?.[key] !== undefined).map((key) => [key, publicCopy(object[key])]));
+  const validSanmaFinal = (scores) => scores.length === 3 &&
+    scores.every(score => Number.isInteger(score) && score % 100 === 0) &&
+    scores.reduce((sum, score) => sum + score, 0) === 105000;
 
   function contextFor(tracker) {
     let state = contexts.get(tracker);
@@ -205,7 +208,21 @@ function installRoundResultCapture({ broadcast, observe, liveObserve, logger }) 
 
   function capture(tracker, actionName, data) {
     const state = contextFor(tracker);
+    if (actionName === "NotifyGameEndResult" && tracker.gameUuid) {
+      const ranking = data.result?.players;
+      if (Array.isArray(ranking) && ranking.length === 3 &&
+          ranking.map(protoSeat).sort().join(",") === "0,1,2") {
+        const game = gameFor(tracker.gameUuid);
+        game.playerCount = 3;
+        game.sanmaFinalScores = ranking.slice().sort((left, right) => protoSeat(left) - protoSeat(right))
+          .map(player => player.total_point ?? 0);
+      }
+      return;
+    }
     if (actionName === "RecordNewRound" || actionName === "ActionNewRound") {
+      const scores = numbers(data.scores);
+      if (tracker.gameUuid && (scores.length === 3 || scores.length === 4))
+        gameFor(tracker.gameUuid).playerCount = scores.length;
       // Protobuf omits scalar zero values in the current decoder.
       state.round = {
         chang: number(data.chang === undefined ? 0 : data.chang),
@@ -235,6 +252,15 @@ function installRoundResultCapture({ broadcast, observe, liveObserve, logger }) 
       ? `${uuid}:${state.round.chang}:${state.round.ju}:${state.round.ben}`
       : `${uuid}:unknown:${digest}`;
     const game = gameFor(uuid);
+    const isFinal = data.gameend === true ||
+      (data.gameend && typeof data.gameend === "object" && Object.keys(data.gameend).length > 0);
+    if (isFinal && game.playerCount === 3) {
+      const draw = type === "noTile" && raw.scores.find(group =>
+        group.old_scores?.length === 3 && group.delta_scores?.length === 3);
+      const drawScores = draw ? draw.old_scores.map((score, seat) => score + draw.delta_scores[seat]) : [];
+      game.sanmaFinalScores = [numbers(data.gameend?.scores), numbers(data.scores), drawScores]
+        .find(validSanmaFinal) || [];
+    }
     const previous = game.results.get(key);
     const winners = type === "hule"
       ? (Array.isArray(data.hules) ? data.hules : []).map((hule) => winnerFrom(hule, state)).filter((winner) => winner.seat !== null)
@@ -308,6 +334,24 @@ function installRoundResultCapture({ broadcast, observe, liveObserve, logger }) 
   broadcast.setObserve = function (state) {
     if (state && typeof state.gameUuid === "string") {
       const game = games.get(state.gameUuid);
+      if (game?.playerCount === 3 && Array.isArray(state.players)) {
+        const players = state.players.filter((player) => player.seat < 3).map((player) => ({
+          ...player,
+          wind: player.wind < 0 ? -1 : (player.seat - state.round.ju + 3) % 3
+        }));
+        const finalScores = state.ended ? game.sanmaFinalScores : undefined;
+        const finalRanking = finalScores === undefined
+          ? (state.finalRanking || []).filter((player) => player.seat < 3)
+          : validSanmaFinal(finalScores)
+            ? players.map(player => ({ seat: player.seat, accountId: player.accountId, nickname: player.nickname,
+                totalPoint: finalScores[player.seat] })).sort((left, right) => right.totalPoint - left.totalPoint)
+            : [];
+        state = {
+          ...state,
+          players,
+          finalRanking: finalRanking.map((player, index) => ({ ...player, rank: index + 1 }))
+        };
+      }
       state = {
         ...state,
         roundResults: game ? [...game.results.values()] : [],

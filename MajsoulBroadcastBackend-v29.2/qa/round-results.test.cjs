@@ -15,8 +15,34 @@ function setup() {
   const broadcast = { handleMessage() {}, send() {}, setObserve(state) { this.state = state; } };
   install({ broadcast, observe, liveObserve, liqi: {}, logger: { error() {} }, electron: {} });
   const read = () => { broadcast.setObserve({gameUuid:'audit-game'}); return broadcast.state.roundResults; };
-  return { observe, liveObserve, read };
+  return { observe, liveObserve, read, broadcast };
 }
+
+test('three-player snapshots remove the padded seat and use three seat winds', () => {
+  const { observe, broadcast } = setup();
+  observe.action('RecordNewRound', { chang: 1, ju: 2, scores: [30000, 41000, 34000] });
+  const players = [30000, 41000, 34000, 0].map((score, seat) => ({ seat, score, wind: 0 }));
+  broadcast.setObserve({
+    gameUuid: 'audit-game',
+    round: { ju: 2 },
+    players,
+    ended: true,
+    finalRanking: [players[1], players[2], players[0], players[3]]
+  });
+  assert.deepEqual(broadcast.state.players.map(player => player.wind), [1, 2, 0]);
+  assert.deepEqual(broadcast.state.finalRanking.map(player => [player.seat, player.rank]), [[1, 1], [2, 2], [0, 3]]);
+});
+
+test('three-player terminal draw uses public deltas instead of stale tracker scores', () => {
+  const { observe, broadcast } = setup();
+  observe.action('RecordNewRound', { chang: 1, ju: 2, scores: [30000, 41000, 34000] });
+  observe.action('RecordNoTile', {
+    gameend: true, scores: [{ old_scores: [30000, 41000, 34000], delta_scores: [2000, -1000, -1000] }]
+  });
+  const players = [30000, 41000, 34000, 0].map((score, seat) => ({ seat, score, wind: 0 }));
+  broadcast.setObserve({ gameUuid: 'audit-game', round: { ju: 2 }, players, ended: true, finalRanking: [] });
+  assert.deepEqual(broadcast.state.finalRanking.map(player => player.totalPoint), [40000, 33000, 32000]);
+});
 
 test('multiple winners and replay keep a single round with known payer', () => {
   const { observe, read } = setup();

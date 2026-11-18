@@ -182,6 +182,11 @@ public static class ObsOverlayPage
     #stage.frieren-avatar .avatar-shell::before,
     #stage.frieren-avatar .avatar-shell::after,
     #stage.frieren-avatar .avatar-frame { animation: none !important; transition: none !important; transform: none !important; }
+    #stage.frieren-sanma #players { top: 250px; height: 654px; grid-template-rows: repeat(3, 1fr); row-gap: 48px; }
+    #stage.frieren-sanma .team { position: absolute; left: 9px; top: 151px; width: 154px; height: 29px;
+      display: block; overflow: hidden; white-space: nowrap; text-align: center;
+      color: #e5f6ed; font: 700 16px/29px "Microsoft YaHei UI", sans-serif; text-shadow: 0 2px 4px #00111e; }
+    #stage.frieren-sanma .divider-effects { display: none; }
 
     @keyframes art-orbit-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
     @keyframes art-star-glow { 0%, 100% { transform: scale(.85); opacity: .2; } 50% { transform: scale(1.3); opacity: .5; } }
@@ -224,6 +229,9 @@ public static class ObsOverlayPage
     const playerNodes = [];
     let gapNodes;
     const previewMode = new URLSearchParams(location.search).get('preview') === '1';
+    const sanmaNumberFormat = new Intl.NumberFormat('zh-CN', {
+      signDisplay: 'exceptZero', maximumFractionDigits: 1, useGrouping: false
+    });
     document.body.classList.toggle('preview', previewMode);
 
     function resize() {
@@ -656,7 +664,8 @@ public static class ObsOverlayPage
         if (revision === lastRevision) return;
         lastRevision = revision;
         const teamMode = state.layoutStyle === 'teamMode';
-        const frierenMode = state.layoutStyle === 'frierenVerticalAvatar';
+        const sanmaMode = state.layoutStyle === 'frierenSanma';
+        const frierenMode = state.layoutStyle === 'frierenVerticalAvatar' || sanmaMode;
         const matchMode = state.layoutStyle === 'verticalMatch';
         const showCurrentScore = matchMode && state.verticalNumberMode === 'score';
         const verticalAvatar = state.layoutStyle === 'verticalAvatar' || frierenMode || teamMode || matchMode;
@@ -664,6 +673,7 @@ public static class ObsOverlayPage
         stage.classList.toggle('vertical-avatar', verticalAvatar);
         stage.classList.toggle('brand-avatar', state.layoutStyle === 'verticalAvatar' || frierenMode || matchMode);
         stage.classList.toggle('frieren-avatar', frierenMode);
+        stage.classList.toggle('frieren-sanma', sanmaMode);
         stage.classList.toggle('team-mode', teamMode);
         stage.classList.toggle('gap-conditions', gapConditions);
         applyAsset(leftBoard, state.hasLeftBoard, '/asset/left-board', state.leftBoardVersion);
@@ -678,9 +688,11 @@ public static class ObsOverlayPage
         matchText.textContent = state.matchText || '';
         renderGapPanel(state);
 
-        for (let i = 0; i < 4; i++) {
-          const player = (state.players || [])[i] || {};
+        for (let i = 0; i < playerNodes.length; i++) {
+          const player = (state.players || [])[i];
           const nodes = playerNodes[i];
+          nodes.root.hidden = !player;
+          if (!player) continue;
           nodes.root.classList.toggle('riichi', player.riichi === true);
           nodes.wind.textContent = player.wind || '?';
           nodes.wind.classList.toggle('east', player.wind === '东');
@@ -689,6 +701,16 @@ public static class ObsOverlayPage
           else
             fitName(nodes.name, player.nickname);
           fitTeam(nodes.team, player.teamName);
+          if (sanmaMode) {
+            const value = player.sanmaCumulative == null ? '—' : sanmaNumberFormat.format(player.sanmaCumulative);
+            nodes.total.style.display = 'block';
+            nodes.totalValue.textContent = state.sanmaShowCumulative ? value : String(player.score);
+            nodes.lastTotal = null;
+            fitTotal(nodes.total, nodes.totalValue);
+            applyAsset(nodes.avatar, player.hasAvatar && !player.transparentAvatar, `/asset/avatar-${i}`, player.avatarVersion);
+            applyAvatarFrame(nodes.avatarFrame, nodes.avatarShell, { ...player, avatarFrameMode: 'default', hasAvatarFrame: false });
+            continue;
+          }
           nodes.lastScore = transitionNumber(
             nodes.score,
             nodes.scoreValue,

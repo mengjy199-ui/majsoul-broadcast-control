@@ -130,8 +130,8 @@ public static class RoundResultFormatter
     private static string Scores(JsonElement result, string property, IReadOnlyList<RoundReportPlayer> players, bool signed)
     {
         var values = Array(result, property);
-        if (values.Count != 4) return "未提供";
-        return string.Join("；", Enumerable.Range(0, 4).Select(seat =>
+        if (values.Count is not (3 or 4)) return "未提供";
+        return string.Join("；", Enumerable.Range(0, values.Count).Select(seat =>
         {
             var name = players.FirstOrDefault(player => player.Seat == seat)?.Nickname;
             if (string.IsNullOrWhiteSpace(name)) name = $"位置 {seat + 1}";

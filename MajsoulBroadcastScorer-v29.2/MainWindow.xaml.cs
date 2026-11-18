@@ -27,6 +27,9 @@ public partial class MainWindow : Window
     private readonly VerticalCardPublication _verticalCardPublication;
     private readonly LiveStateReducer _reducer;
     private readonly LiveStateReducer _reportReducer;
+    private readonly SanmaScoreLedger _sanmaLedger = new(Path.Combine(AppContext.BaseDirectory, "reports", "sanma-totals.json"));
+    private readonly Dictionary<string, string> _sanmaContestByGame = new(StringComparer.Ordinal);
+    private string? _sanmaSaveError;
     private readonly TotalPointsDraft _totalPointsDraft;
     private readonly PlayerPresentationDraft _playerPresentationDraft = new();
     private readonly MatchScoreReportRecorder _scoreReportRecorder;
@@ -105,15 +108,7 @@ public partial class MainWindow : Window
         ContestIdTextBox.Text = _settings.ContestId;
         BackendStatusText.Text = "观战后台：" + _backendManager.Status;
         ApiDelayTextBox.Text = _settings.ApiDisplayDelaySeconds.ToString("0.##", CultureInfo.CurrentCulture);
-        OverlayStyleComboBox.SelectedValue = _stylePublication.PreviewStyle switch
-        {
-            OverlayLayoutStyle.VerticalAvatar => "竖排头像",
-            OverlayLayoutStyle.FrierenVerticalAvatar => "竖排头像·芙莉莲",
-            OverlayLayoutStyle.VerticalMatch => "竖排头像·赛事展示",
-            OverlayLayoutStyle.TeamMode => "队伍模式",
-            OverlayLayoutStyle.GapConditions => "分差与逆转",
-            _ => "竖排头像"
-        };
+        OverlayStyleComboBox.SelectedValue = StyleName(_stylePublication.PreviewStyle);
         GapTargetComboBox.SelectedValue = _settings.GapTargetMode switch
         {
             ReversalTargetMode.TopTwo => "逆转前二",
@@ -165,6 +160,8 @@ public partial class MainWindow : Window
         {
             if (_reportReducer.Apply(state))
             {
+                if (state.Observe is { Players.Count: 3 } sanma)
+                    RecordSanmaResult(sanma);
                 var timestamp = state.ServerTime > 0
                     ? DateTimeOffset.FromUnixTimeMilliseconds(state.ServerTime)
                     : DateTimeOffset.Now;
@@ -194,6 +191,8 @@ public partial class MainWindow : Window
 
     private bool ApplyReadyApiStates()
     {
+        if (_savingChanges)
+            return false;
         var ready = _apiStateQueue.DrainReady(
             DateTimeOffset.UtcNow,
             TimeSpan.FromSeconds(_settings.ApiDisplayDelaySeconds));
@@ -220,13 +219,20 @@ public partial class MainWindow : Window
                         .ToDictionary(
                             player => player.Seat,
                             player => currentSeatByAccount[player.AccountId]);
-                    if (seatMoves.Count > 0)
+                    var departed = beforeBindings.Where(player => player.AccountId > 0
+                        ? !currentSeatByAccount.ContainsKey(player.AccountId)
+                        : seatMoves.ContainsValue(player.Seat)).Select(player => player.Seat).ToHashSet();
+                    if (seatMoves.Count > 0 || departed.Count > 0)
                     {
-                        _totalPointsDraft.Rebind(seatMoves);
-                        _playerPresentationDraft.Rebind(seatMoves);
-                        ReorderSeatInputs(_rawTotalInputs, seatMoves);
-                        ReorderSeatInputs(_rawScoreInputs, seatMoves);
+                        var hadSettlement = _totalPointsDraft.SourceSettlementGameUuid is not null;
+                        _totalPointsDraft.Rebind(seatMoves, departed);
+                        _playerPresentationDraft.Rebind(seatMoves, departed);
+                        ReorderSeatInputs(_rawTotalInputs, seatMoves, departed);
+                        if (hadSettlement && _totalPointsDraft.SourceSettlementGameUuid is null)
+                            Array.Fill(_rawTotalInputs, null);
+                        ReorderSeatInputs(_rawScoreInputs, seatMoves, departed);
                         Array.Fill(_avatarPreviewKeys, null);
+                        UpdateConfirmChangesButton();
                     }
                     bindingsChanged |= !beforeBindings.SequenceEqual(_settings.Players
                         .Select(AccountBindingSnapshot.From));
@@ -247,11 +253,13 @@ public partial class MainWindow : Window
         return true;
     }
 
-    private static void ReorderSeatInputs(string?[] values, IReadOnlyDictionary<int, int> seatMoves)
+    private static void ReorderSeatInputs(string?[] values, IReadOnlyDictionary<int, int> seatMoves, IReadOnlySet<int> departed)
     {
         var previous = (string?[])values.Clone();
+        Array.Fill(values, null);
         for (var oldSeat = 0; oldSeat < values.Length; oldSeat++)
         {
+            if (departed.Contains(oldSeat)) continue;
             var newSeat = seatMoves.TryGetValue(oldSeat, out var movedSeat) ? movedSeat : oldSeat;
             values[newSeat] = previous[oldSeat];
         }
@@ -486,6 +494,7 @@ public partial class MainWindow : Window
         UpdateStyleControls();
         UpdateReportStatus();
         UpdateCumulativeSettlement(display);
+        UpdateSanmaControls(display);
         UpdateObs(display);
     }
 
@@ -530,7 +539,8 @@ public partial class MainWindow : Window
     private static string StyleName(OverlayLayoutStyle style) => style switch
     {
         OverlayLayoutStyle.VerticalAvatar => "竖排头像",
-            OverlayLayoutStyle.FrierenVerticalAvatar => "竖排头像·芙莉莲",
+        OverlayLayoutStyle.FrierenVerticalAvatar => "竖排头像·芙莉莲",
+        OverlayLayoutStyle.FrierenSanma => "竖排头像‧芙莉莲‧三人南",
         OverlayLayoutStyle.VerticalMatch => "竖排头像·赛事展示",
         OverlayLayoutStyle.TeamMode => "队伍模式",
         OverlayLayoutStyle.GapConditions => "分差与逆转",
@@ -560,6 +570,8 @@ public partial class MainWindow : Window
 
     private void UpdatePlayerEditors(LiveDisplayState display)
     {
+        if (PlayerEditorsControl.Items.Count != display.Players.Count)
+            PlayerEditorsControl.ItemsSource = _playerEditors.Take(display.Players.Count).ToArray();
         foreach (var shown in display.Players)
         {
             var editor = _playerEditors[shown.Seat];
@@ -783,6 +795,8 @@ public partial class MainWindow : Window
     private void StageProjectedTotals_Click(object sender, RoutedEventArgs e)
     {
         var display = _reducer.Current;
+        if (_stylePublication.PublishedStyle == OverlayLayoutStyle.FrierenSanma || display.Players.Count == 3)
+            return;
         if (!display.Ended)
         {
             CumulativeSettlementHintText.Text = "本半庄尚未结束，暂不能累计。";
@@ -824,6 +838,12 @@ public partial class MainWindow : Window
         if (StageProjectedTotalsButton is null || CumulativeSettlementHintText is null)
             return;
         StageProjectedTotalsButton.IsEnabled = false;
+        if (_stylePublication.PublishedStyle == OverlayLayoutStyle.FrierenSanma || display.Players.Count == 3)
+        {
+            StageProjectedTotalsButton.Content = "三人南自动累计";
+            CumulativeSettlementHintText.Text = "收到三人桌终局后，程序按大会和雀魂账号自动累计得失分。";
+            return;
+        }
         if (!display.IsObserving || string.IsNullOrWhiteSpace(display.GameUuid))
         {
             StageProjectedTotalsButton.Content = "等待开始观战";
@@ -1032,6 +1052,7 @@ public partial class MainWindow : Window
         {
             "竖排头像" => OverlayLayoutStyle.VerticalAvatar,
             "竖排头像·芙莉莲" => OverlayLayoutStyle.FrierenVerticalAvatar,
+            "竖排头像‧芙莉莲‧三人南" => OverlayLayoutStyle.FrierenSanma,
             "竖排头像·赛事展示" => OverlayLayoutStyle.VerticalMatch,
             "队伍模式" => OverlayLayoutStyle.TeamMode,
             "分差与逆转" => OverlayLayoutStyle.GapConditions,
@@ -1333,9 +1354,8 @@ public partial class MainWindow : Window
             ["font-source-han-serif-cn-lower"] = Path.Combine(
                 AppContext.BaseDirectory, "Assets", "Fonts", "SourceHanSerifCN-LatinLower.woff2")
         };
-        IReadOnlyDictionary<int, ReversalPlayerResult> calculatedBySeat =
-            new Dictionary<int, ReversalPlayerResult>();
-        calculatedBySeat = GetCachedReversalResults(display);
+        var calculatedBySeat = display.Players.Count == 4 ? GetCachedReversalResults(display) : null;
+        var sanmaTotals = display.Players.Count == 3 ? GetSanmaTotals(display) : [];
 
         var players = new List<ObsPlayerState>();
         foreach (var player in display.Players)
@@ -1344,7 +1364,7 @@ public partial class MainWindow : Window
             var framePath = _settingsStore.ResolveAsset(player.AvatarFramePath);
             paths[$"avatar-{player.Seat}"] = path;
             paths[$"avatar-frame-{player.Seat}"] = framePath;
-            calculatedBySeat.TryGetValue(player.Seat, out var points);
+            var points = calculatedBySeat?.GetValueOrDefault(player.Seat);
             players.Add(new ObsPlayerState(
                 player.Seat,
                 WindText.FromCode(player.Wind),
@@ -1365,13 +1385,16 @@ public partial class MainWindow : Window
                     _ => "default"
                 },
                 framePath is not null,
-                VersionOf(framePath)));
+                VersionOf(framePath))
+            {
+                SanmaCumulative = sanmaTotals.GetValueOrDefault(player.AccountId)
+            });
         }
 
         IReadOnlyList<ObsReversalPlayerState> reversals = [];
         ObsSelectedReversalState? selectedReversal = null;
-        if (_stylePublication.PublishedStyle == OverlayLayoutStyle.GapConditions ||
-            _stylePublication.PreviewStyle == OverlayLayoutStyle.GapConditions)
+        if (display.Players.Count == 4 && (_stylePublication.PublishedStyle == OverlayLayoutStyle.GapConditions ||
+            _stylePublication.PreviewStyle == OverlayLayoutStyle.GapConditions))
         {
             var inputs = display.Players.OrderBy(player => player.Seat)
                 .Select(player => new ReversalPlayerInput(
@@ -1432,6 +1455,7 @@ public partial class MainWindow : Window
             {
                 OverlayLayoutStyle.VerticalAvatar => "verticalAvatar",
                 OverlayLayoutStyle.FrierenVerticalAvatar => "frierenVerticalAvatar",
+                OverlayLayoutStyle.FrierenSanma => "frierenSanma",
                 OverlayLayoutStyle.VerticalMatch => "verticalMatch",
                 OverlayLayoutStyle.TeamMode => "teamMode",
                 OverlayLayoutStyle.GapConditions => "gapConditions",
@@ -1450,12 +1474,13 @@ public partial class MainWindow : Window
             Layout(_settings.LogoLayout, paths["logo"]),
             Layout(_settings.BottomLeftLayout, paths["bottom-left"]),
             _settings.GapSelectedSeat,
-            players,
+            style == OverlayLayoutStyle.FrierenSanma && players.Count != 3 ? [] : players,
             reversals,
             style == OverlayLayoutStyle.GapConditions ? selectedReversal : null)
         {
             VerticalNameMode = (preview ? _verticalCardPublication.Preview : _verticalCardPublication.Published).NameKey,
-            VerticalNumberMode = (preview ? _verticalCardPublication.Preview : _verticalCardPublication.Published).NumberKey
+            VerticalNumberMode = (preview ? _verticalCardPublication.Preview : _verticalCardPublication.Published).NumberKey,
+            SanmaShowCumulative = _settings.SanmaShowCumulative
         };
 
         _obsServer.Update(

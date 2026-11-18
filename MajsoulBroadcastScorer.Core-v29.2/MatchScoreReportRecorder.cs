@@ -60,7 +60,7 @@ public sealed class MatchScoreReportRecorder : IDisposable
     {
         ArgumentNullException.ThrowIfNull(display);
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (!display.IsObserving || string.IsNullOrWhiteSpace(display.GameUuid) || display.Players.Count != 4)
+        if (!display.IsObserving || string.IsNullOrWhiteSpace(display.GameUuid) || display.Players.Count is not (3 or 4))
             return false;
 
         lock (_sync)
@@ -70,6 +70,8 @@ public sealed class MatchScoreReportRecorder : IDisposable
             if (_current is not null && !string.Equals(_current.GameUuid, display.GameUuid, StringComparison.Ordinal))
                 FinalizeCurrent(timestamp, "检测到新对局");
             _current ??= Session.Start(display.GameUuid, timestamp);
+            if (_current.Entries.Count > 0 && _current.Entries[0].Players.Count != display.Players.Count)
+                _current.Entries.Clear();
 
             var players = SnapshotPlayers(display);
             var scoreChanged = _current.Entries.Count == 0 ||
@@ -176,7 +178,8 @@ public sealed class MatchScoreReportRecorder : IDisposable
     {
         var builder = new StringBuilder();
         builder.Append("时间,事件,场局,本场,供托");
-        for (var seat = 0; seat < 4; seat++)
+        var playerCount = report.Entries.Count == 0 ? 0 : report.Entries.Max(entry => entry.Players.Count);
+        for (var seat = 0; seat < playerCount; seat++)
             builder.Append($",位置{seat + 1}昵称,位置{seat + 1}座位风,位置{seat + 1}分数,位置{seat + 1}变化");
         builder.AppendLine();
 
@@ -191,7 +194,8 @@ public sealed class MatchScoreReportRecorder : IDisposable
             var ordered = entry.Players.OrderBy(player => player.Seat).ToArray();
             foreach (var player in ordered)
             {
-                var delta = previousScores is null ? 0 : player.Score - previousScores[player.Seat];
+                var delta = previousScores is null || player.Seat >= previousScores.Length
+                    ? 0 : player.Score - previousScores[player.Seat];
                 builder.Append(',').Append(Csv(player.Nickname));
                 builder.Append(',').Append(Csv(WindText.FromCode(player.Wind)));
                 builder.Append(',').Append(player.Score.ToString(CultureInfo.InvariantCulture));
