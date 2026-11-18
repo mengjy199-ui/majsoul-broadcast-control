@@ -57,6 +57,39 @@ public sealed class SanmaScoreTests
     }
 
     [Fact]
+    public void ManualPriorTotalSurvivesReloadAndAddsEachGameOnlyOnce()
+    {
+        var directory = Directory.CreateTempSubdirectory();
+        try
+        {
+            var path = Path.Combine(directory.FullName, "totals.json");
+            var ledger = new SanmaScoreLedger(path);
+            var settings = new V27Settings();
+            Assert.True(ledger.Record("contest", Game("first", [101, 102, 103], [33000, 37000, 35000])));
+            var recorded = ledger.Total("contest", 101, "second");
+            settings.SetSanmaPriorAdjustment("contest", 101, 12m - recorded);
+            settings = V27SettingsJson.Deserialize(V27SettingsJson.Serialize(settings));
+
+            decimal Displayed(string game, int score) => SanmaScoreLedger.ProjectedTotal(
+                ledger.Total("contest", 101, game) + settings.SanmaPriorAdjustment("contest", 101), score);
+
+            Assert.Equal(7m, Displayed("second", 30000));
+            Assert.Equal(9m, Displayed("second", 32000));
+            var second = Game("second", [103, 101, 102], [38000, 32000, 35000]);
+            Assert.True(ledger.Record("contest", second));
+            Assert.False(ledger.Record("contest", second));
+            Assert.Equal(9m, Displayed("second", 32000));
+            Assert.Equal(9m, Displayed("third", 35000));
+            Assert.Equal(0m, settings.SanmaPriorAdjustment("other-contest", 101));
+            Assert.Equal(0m, settings.SanmaPriorAdjustment("contest", 102));
+        }
+        finally
+        {
+            directory.Delete(true);
+        }
+    }
+
+    [Fact]
     public void ThreeSeatsUseFinalScoresAndMoveCustomTeamsWithThePlayer()
     {
         var settings = new V27Settings();
@@ -75,6 +108,20 @@ public sealed class SanmaScoreTests
         Assert.Equal("assets/player.png", display.Players[0].AvatarPath);
         Assert.Equal("API 队名", display.Players[1].TeamName);
         Assert.Equal(0, settings.Players[3].AccountId);
+
+        Assert.True(reducer.Apply(new BroadcastApiState
+        {
+            Observe = new()
+            {
+                GameUuid = "four",
+                Players = Enumerable.Range(0, 4).Select(seat => new BroadcastPlayerState
+                {
+                    Seat = seat, AccountId = 101 + seat, Wind = seat, Score = 25000
+                }).ToArray()
+            }
+        }, bindPlayerAccounts: true));
+        Assert.Equal(4, reducer.Current.Players.Count);
+        Assert.Equal("手工队名", reducer.Current.Players[0].TeamName);
     }
 
     private static BroadcastObserveState Game(string uuid, long[] accounts, int[] scores, bool ended = true) => new()

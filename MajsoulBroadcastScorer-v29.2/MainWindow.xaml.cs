@@ -541,7 +541,7 @@ public partial class MainWindow : Window
     private static string StyleName(OverlayLayoutStyle style) => style switch
     {
         OverlayLayoutStyle.VerticalAvatar => "竖排头像",
-        OverlayLayoutStyle.FrierenVerticalAvatar => "竖排头像·芙莉莲",
+        OverlayLayoutStyle.FrierenVerticalAvatar => "竖排头像·芙莉莲（四人）",
         OverlayLayoutStyle.FrierenSanma => "竖排头像‧芙莉莲‧三人南",
         OverlayLayoutStyle.VerticalMatch => "竖排头像·赛事展示",
         OverlayLayoutStyle.TeamMode => "队伍模式",
@@ -572,6 +572,8 @@ public partial class MainWindow : Window
 
     private void UpdatePlayerEditors(LiveDisplayState display)
     {
+        var sanmaStyle = _stylePublication.PublishedStyle == OverlayLayoutStyle.FrierenSanma;
+        var sanmaPrevious = sanmaStyle && display.Players.Count == 3 ? GetSanmaPreviousPoints(display) : [];
         if (PlayerEditorsControl.Items.Count != display.Players.Count)
             PlayerEditorsControl.ItemsSource = _playerEditors.Take(display.Players.Count).ToArray();
         foreach (var shown in display.Players)
@@ -584,9 +586,20 @@ public partial class MainWindow : Window
                 editor.Score = _rawScoreInputs[shown.Seat] ??
                     _playerPresentationDraft.GetScore(shown.Seat, shown.Score).ToString(CultureInfo.InvariantCulture);
                 editor.Wind = WindText.FromCode(shown.Wind);
-                editor.Total = _rawTotalInputs[shown.Seat] ?? FormatSigned(_totalPointsDraft.IsDirty(shown.Seat)
-                    ? _totalPointsDraft.Get(shown.Seat)
-                    : setting.TotalPoints);
+                if (sanmaStyle)
+                {
+                    editor.TotalVisibility = shown.Seat < 3 ? Visibility.Visible : Visibility.Collapsed;
+                    UpdateSanmaPriorEditor(editor, display, shown, sanmaPrevious);
+                }
+                else
+                {
+                    editor.TotalVisibility = display.Players.Count == 4 ? Visibility.Visible : Visibility.Collapsed;
+                    editor.TotalLabel = "此前累计精算点";
+                    editor.CanEditTotal = true;
+                    editor.Total = _rawTotalInputs[shown.Seat] ?? FormatSigned(_totalPointsDraft.IsDirty(shown.Seat)
+                        ? _totalPointsDraft.Get(shown.Seat)
+                        : setting.TotalPoints);
+                }
                 editor.RiichiMode = setting.RiichiMode switch
                 {
                     RiichiDisplayMode.ForceOn => "强制 ON",
@@ -658,9 +671,14 @@ public partial class MainWindow : Window
                 setting.ManualWind = WindText.ToCode(editor.Wind);
                 break;
             case nameof(PlayerEditorViewModel.Total):
-                _rawTotalInputs[editor.Seat] = editor.Total;
-                if (TryParseDecimal(editor.Total, out var total))
-                    _totalPointsDraft.Set(editor.Seat, total);
+                if (_stylePublication.PublishedStyle == OverlayLayoutStyle.FrierenSanma)
+                    StageSanmaPrior(editor);
+                else
+                {
+                    _rawTotalInputs[editor.Seat] = editor.Total;
+                    if (TryParseDecimal(editor.Total, out var total))
+                        _totalPointsDraft.Set(editor.Seat, total);
+                }
                 UpdateConfirmChangesButton();
                 UpdateInputStatus();
                 return;
@@ -715,10 +733,11 @@ public partial class MainWindow : Window
         try
         {
             var saved = await ManualChangeCommitter.SaveAsync(_settings, _playerPresentationDraft,
-                _totalPointsDraft, _settingsStore.SaveAsync);
+                _totalPointsDraft, SaveManualSettingsAsync);
             _settings = saved;
             Array.Fill(_rawScoreInputs, null);
             Array.Fill(_rawTotalInputs, null);
+            _sanmaPriorDrafts.Clear();
             _reducer.UpdateSettings(_settings);
             _reportReducer.UpdateSettings(_settings);
             _lastManualSaveAt = DateTimeOffset.Now;
@@ -765,15 +784,16 @@ public partial class MainWindow : Window
 
     private bool HasPendingChanges() =>
         _playerPresentationDraft.HasPendingChanges || _totalPointsDraft.HasPendingChanges ||
-        _rawScoreInputs.Any(value => value is not null) || _rawTotalInputs.Any(value => value is not null);
+        _rawScoreInputs.Any(value => value is not null) || _rawTotalInputs.Any(value => value is not null) ||
+        _sanmaPriorDrafts.Count > 0;
 
     private void UpdateConfirmChangesButton()
     {
         if (ConfirmChangesButton is null) return;
         ConfirmChangesButton.IsEnabled = HasPendingChanges() && !_savingChanges;
         ConfirmChangesButton.Content = _savingChanges ? "保存中…" : "确认修改";
-        ChangeStatusText.Text = _savingChanges ? "正在保存选手资料与累计精算点…"
-            : HasPendingChanges() ? "有待确认修改；资料和精算点将一起更新。"
+        ChangeStatusText.Text = _savingChanges ? "正在保存选手资料与累计分数…"
+            : HasPendingChanges() ? "有待确认修改。"
             : _lastManualSaveAt is { } saved ? $"修改已保存并同步 · {saved:HH:mm:ss}"
             : "暂无待确认修改";
     }
@@ -791,6 +811,8 @@ public partial class MainWindow : Window
             .FirstOrDefault(seat => _rawTotalInputs[seat] is not null && !TryParseDecimal(_rawTotalInputs[seat]!, out _), -1);
         PlayerInputStatusText.Text = invalidTotal >= 0
             ? $"位置 {invalidTotal + 1} 的 START 精算点格式不正确。当前输入会保留，但不会播出。"
+            : _sanmaPriorDrafts.Values.Any(draft => !TryParseDecimal(draft.Text, out _))
+                ? "此前累计得失分格式不正确。请输入数字，例如 -5 或 +12.5。"
             : string.Empty;
     }
 
@@ -1053,7 +1075,7 @@ public partial class MainWindow : Window
         var selectedStyle = value switch
         {
             "竖排头像" => OverlayLayoutStyle.VerticalAvatar,
-            "竖排头像·芙莉莲" => OverlayLayoutStyle.FrierenVerticalAvatar,
+            "竖排头像·芙莉莲（四人）" => OverlayLayoutStyle.FrierenVerticalAvatar,
             "竖排头像‧芙莉莲‧三人南" => OverlayLayoutStyle.FrierenSanma,
             "竖排头像·赛事展示" => OverlayLayoutStyle.VerticalMatch,
             "队伍模式" => OverlayLayoutStyle.TeamMode,
@@ -1357,11 +1379,12 @@ public partial class MainWindow : Window
                 AppContext.BaseDirectory, "Assets", "Fonts", "SourceHanSerifCN-LatinLower.woff2")
         };
         var calculatedBySeat = display.Players.Count == 4 ? GetCachedReversalResults(display) : null;
-        var sanmaTotals = display.Players.Count == 3 ? GetSanmaTotals(display) : [];
+        var sanmaPrevious = display.Players.Count == 3 ? GetSanmaPreviousPoints(display) : [];
 
         var players = new List<ObsPlayerState>();
         foreach (var player in display.Players)
         {
+            var sanmaScore = display.Ended ? player.ApiScore ?? player.Score : player.Score;
             var path = _settingsStore.ResolveAsset(player.AvatarPath);
             var framePath = _settingsStore.ResolveAsset(player.AvatarFramePath);
             paths[$"avatar-{player.Seat}"] = path;
@@ -1389,9 +1412,10 @@ public partial class MainWindow : Window
                 framePath is not null,
                 VersionOf(framePath))
             {
-                SanmaCumulative = sanmaTotals.GetValueOrDefault(player.AccountId),
+                SanmaCumulative = sanmaPrevious.TryGetValue(player.AccountId, out var previous)
+                    ? SanmaScoreLedger.ProjectedTotal(previous, sanmaScore) : null,
                 SanmaThisGame = display.Players.Count == 3
-                    ? SanmaScoreLedger.CurrentGamePoints(display.Ended ? player.ApiScore ?? player.Score : player.Score)
+                    ? SanmaScoreLedger.CurrentGamePoints(sanmaScore)
                     : null
             });
         }

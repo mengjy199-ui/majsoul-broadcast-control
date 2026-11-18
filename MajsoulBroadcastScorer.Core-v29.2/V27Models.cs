@@ -109,6 +109,7 @@ public sealed class V27Settings
     public bool SanmaShowCumulative { get; set; }
     public SanmaNumberContent? SanmaNumber { get; set; }
     public int SanmaPlayerGap { get; set; } = 16;
+    public Dictionary<string, Dictionary<long, decimal>> SanmaPriorAdjustments { get; set; } = new(StringComparer.Ordinal);
     public string LastSettlementGameUuid { get; set; } = string.Empty;
     public int GapSelectedSeat { get; set; }
     public ReversalTargetMode GapTargetMode { get; set; } = ReversalTargetMode.PreviousRank;
@@ -145,6 +146,7 @@ public sealed class V27Settings
         if (SanmaNumber is not { } sanmaNumber || !Enum.IsDefined(sanmaNumber))
             SanmaNumber = SanmaShowCumulative ? SanmaNumberContent.Cumulative : SanmaNumberContent.CurrentScore;
         SanmaPlayerGap = Math.Clamp(SanmaPlayerGap, 0, 64);
+        SanmaPriorAdjustments ??= new(StringComparer.Ordinal);
         LastSettlementGameUuid = (LastSettlementGameUuid ?? string.Empty).Trim();
         if (!Enum.IsDefined(VerticalName)) VerticalName = VerticalNameContent.TeamName;
         if (!Enum.IsDefined(VerticalNumber)) VerticalNumber = VerticalNumberContent.CurrentScore;
@@ -239,6 +241,16 @@ public sealed class V27Settings
     public bool IsSettlementApplied(string gameUuid) =>
         !string.IsNullOrWhiteSpace(gameUuid) &&
         string.Equals(LastSettlementGameUuid, gameUuid, StringComparison.Ordinal);
+
+    public decimal SanmaPriorAdjustment(string contest, long accountId) =>
+        SanmaPriorAdjustments.GetValueOrDefault(contest)?.GetValueOrDefault(accountId) ?? 0m;
+
+    public void SetSanmaPriorAdjustment(string contest, long accountId, decimal adjustment)
+    {
+        if (!SanmaPriorAdjustments.TryGetValue(contest, out var accounts))
+            SanmaPriorAdjustments[contest] = accounts = [];
+        accounts[accountId] = adjustment;
+    }
 
     private static void ClearAccountProfile(PlayerSlotSettings player)
     {

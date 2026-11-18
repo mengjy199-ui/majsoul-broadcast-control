@@ -47,6 +47,8 @@ public sealed class SanmaScoreLedger(string path)
 
     public static decimal CurrentGamePoints(int score) => (score - StartingScore) / 1000m;
 
+    public static decimal ProjectedTotal(decimal previous, int score) => previous + CurrentGamePoints(score);
+
     public decimal Total(string contestId, long accountId, string? excludedGameUuid) => Results
         .Where(item => item.Value.ContestId == contestId && item.Key != excludedGameUuid)
         .Sum(item => item.Value.Deltas.GetValueOrDefault(accountId) / 1000m);
