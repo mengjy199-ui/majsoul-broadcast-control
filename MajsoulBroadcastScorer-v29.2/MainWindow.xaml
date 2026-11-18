@@ -163,11 +163,23 @@
 
         <Border x:Name="SanmaDisplayControls" Background="{StaticResource AppSurfaceBrush}" BorderBrush="{StaticResource AppBorderBrush}"
                 BorderThickness="1" CornerRadius="10" Padding="18,12" Margin="0,0,0,14" Visibility="Collapsed">
-          <WrapPanel VerticalAlignment="Center">
-            <Button x:Name="SanmaCurrentButton" Content="当前分数" Click="SanmaDisplay_Click"/>
-            <Button x:Name="SanmaCumulativeButton" Content="累计得失分" Click="SanmaDisplay_Click" Margin="8,3,12,3"/>
-            <TextBlock x:Name="SanmaStatusText" VerticalAlignment="Center" Foreground="{StaticResource AppMutedTextBrush}"/>
-          </WrapPanel>
+          <StackPanel>
+            <WrapPanel VerticalAlignment="Center">
+              <Button x:Name="SanmaCurrentButton" Content="当前分数" Click="SanmaDisplay_Click"/>
+              <Button x:Name="SanmaThisGameButton" Content="本半庄得失分" Click="SanmaDisplay_Click" Margin="8,3,3,3"/>
+              <Button x:Name="SanmaCumulativeButton" Content="累计得失分" Click="SanmaDisplay_Click" Margin="8,3,12,3"/>
+              <TextBlock x:Name="SanmaStatusText" VerticalAlignment="Center" Foreground="{StaticResource AppMutedTextBrush}"/>
+            </WrapPanel>
+            <Grid Margin="3,8,3,0" HorizontalAlignment="Left">
+              <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="180"/><ColumnDefinition Width="52"/></Grid.ColumnDefinitions>
+              <TextBlock Text="选手间距" VerticalAlignment="Center"/>
+              <Slider x:Name="SanmaGapSlider" Grid.Column="1" Margin="10,0" VerticalAlignment="Center" Minimum="0" Maximum="64"
+                      TickFrequency="1" IsSnapToTickEnabled="True" IsMoveToPointEnabled="True"
+                      AutomationProperties.Name="选手间距（像素）" ValueChanged="SanmaGap_Changed"
+                      PreviewMouseLeftButtonUp="SanmaGap_Commit" LostKeyboardFocus="SanmaGap_Commit" KeyUp="SanmaGap_Commit"/>
+              <TextBlock x:Name="SanmaGapValue" Grid.Column="2" VerticalAlignment="Center"/>
+            </Grid>
+          </StackPanel>
         </Border>
 
         <GroupBox x:Name="VerticalMatchSettingsGroup" Header="赛事展示内容" Margin="0,0,0,14" Padding="18,14">

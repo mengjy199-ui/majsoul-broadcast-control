@@ -116,6 +116,8 @@ public partial class MainWindow : Window
             _ => "逆转上一位"
         };
         ShowTotalCheckBox.IsChecked = _settings.ShowTotalPoints;
+        SanmaGapSlider.Value = _settings.SanmaPlayerGap;
+        SanmaGapValue.Text = $"{_settings.SanmaPlayerGap} px";
         VerticalNameComboBox.SelectedValue = _verticalCardPublication.Preview.Name == VerticalNameContent.TeamName ? "所属队伍" : "选手姓名";
         VerticalNumberComboBox.SelectedValue = _verticalCardPublication.Preview.Number == VerticalNumberContent.CurrentScore ? "当前分数（持有点数）" : "精算点";
         WriteLeftBoardFocusControls();
@@ -1387,7 +1389,10 @@ public partial class MainWindow : Window
                 framePath is not null,
                 VersionOf(framePath))
             {
-                SanmaCumulative = sanmaTotals.GetValueOrDefault(player.AccountId)
+                SanmaCumulative = sanmaTotals.GetValueOrDefault(player.AccountId),
+                SanmaThisGame = display.Players.Count == 3
+                    ? SanmaScoreLedger.CurrentGamePoints(display.Ended ? player.ApiScore ?? player.Score : player.Score)
+                    : null
             });
         }
 
@@ -1480,7 +1485,13 @@ public partial class MainWindow : Window
         {
             VerticalNameMode = (preview ? _verticalCardPublication.Preview : _verticalCardPublication.Published).NameKey,
             VerticalNumberMode = (preview ? _verticalCardPublication.Preview : _verticalCardPublication.Published).NumberKey,
-            SanmaShowCumulative = _settings.SanmaShowCumulative
+            SanmaNumberMode = _settings.SanmaNumber switch
+            {
+                SanmaNumberContent.ThisGame => "thisGame",
+                SanmaNumberContent.Cumulative => "cumulative",
+                _ => "score"
+            },
+            SanmaPlayerGap = _settings.SanmaPlayerGap
         };
 
         _obsServer.Update(

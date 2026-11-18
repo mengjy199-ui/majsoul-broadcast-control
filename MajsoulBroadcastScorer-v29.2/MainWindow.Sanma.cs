@@ -7,6 +7,8 @@ namespace MajsoulBroadcastScorer.V27;
 
 public partial class MainWindow
 {
+    private bool _sanmaGapChanged;
+
     private void RecordSanmaResult(BroadcastObserveState observe)
     {
         _sanmaContestByGame.TryAdd(observe.GameUuid, _settings.ContestId);
@@ -30,9 +32,9 @@ public partial class MainWindow
         {
             var contest = _sanmaLedger.GetContest(display.GameUuid,
                 _sanmaContestByGame.GetValueOrDefault(display.GameUuid, _settings.ContestId));
-            return display.Players.Select(player => player.AccountId).Where(id => id > 0).Distinct()
-                .ToDictionary(id => id, id => (decimal?)_sanmaLedger.Total(contest, id,
-                    display.Ended ? null : display.GameUuid));
+            return display.Players.Where(player => player.AccountId > 0)
+                .ToDictionary(player => player.AccountId, player => (decimal?)_sanmaLedger.Total(
+                    contest, player.AccountId, display.Ended ? null : display.GameUuid));
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException)
         {
@@ -48,17 +50,39 @@ public partial class MainWindow
         var legacyTotals = !sanmaStyle && display.Players.Count == 4;
         ShowTotalCheckBox.Visibility = legacyTotals ? Visibility.Visible : Visibility.Collapsed;
         PlayerEditorsControl.Tag = legacyTotals ? Visibility.Visible : Visibility.Collapsed;
-        SanmaCurrentButton.IsEnabled = _settings.SanmaShowCumulative;
-        SanmaCumulativeButton.IsEnabled = !_settings.SanmaShowCumulative;
+        SanmaCurrentButton.IsEnabled = _settings.SanmaNumber != SanmaNumberContent.CurrentScore;
+        SanmaThisGameButton.IsEnabled = _settings.SanmaNumber != SanmaNumberContent.ThisGame;
+        SanmaCumulativeButton.IsEnabled = _settings.SanmaNumber != SanmaNumberContent.Cumulative;
         SanmaStatusText.Text = _sanmaSaveError ?? (display.Players.Count == 3
-            ? "终局自动累计，每 1000 点显示为 1。"
+            ? "局中实时更新，终局自动记入累计。"
             : "请在观战登录中选择三人麻将对局。");
     }
 
     private void SanmaDisplay_Click(object sender, RoutedEventArgs e)
     {
-        _settings.SanmaShowCumulative = ReferenceEquals(sender, SanmaCumulativeButton);
+        _settings.SanmaNumber = ReferenceEquals(sender, SanmaCumulativeButton) ? SanmaNumberContent.Cumulative
+            : ReferenceEquals(sender, SanmaThisGameButton) ? SanmaNumberContent.ThisGame
+            : SanmaNumberContent.CurrentScore;
+        _settings.SanmaShowCumulative = _settings.SanmaNumber == SanmaNumberContent.Cumulative;
         RefreshAll();
+        SaveRefresh();
+    }
+
+    private void SanmaGap_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_updatingUi || SanmaGapValue is null)
+            return;
+        _settings.SanmaPlayerGap = (int)Math.Round(e.NewValue);
+        SanmaGapValue.Text = $"{_settings.SanmaPlayerGap} px";
+        _sanmaGapChanged = true;
+        UpdateObs(_reducer.Current);
+    }
+
+    private void SanmaGap_Commit(object sender, RoutedEventArgs e)
+    {
+        if (!_sanmaGapChanged)
+            return;
+        _sanmaGapChanged = false;
         SaveRefresh();
     }
 }

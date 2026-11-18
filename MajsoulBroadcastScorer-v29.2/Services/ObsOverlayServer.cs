@@ -25,6 +25,7 @@ public sealed record ObsPlayerState(
     long AvatarFrameVersion)
 {
     public decimal? SanmaCumulative { get; init; }
+    public decimal? SanmaThisGame { get; init; }
 }
 
 public sealed record ObsReversalPlayerState(
@@ -81,7 +82,8 @@ public sealed record ObsOverlayState(
     public long Revision { get; init; }
     public string VerticalNameMode { get; init; } = "nickname";
     public string VerticalNumberMode { get; init; } = "totalPoints";
-    public bool SanmaShowCumulative { get; init; }
+    public string SanmaNumberMode { get; init; } = "score";
+    public int SanmaPlayerGap { get; init; } = 16;
 }
 
 public sealed class ObsOverlayServer : IDisposable

@@ -4,6 +4,7 @@ namespace MajsoulBroadcastScorer.Core.V27;
 
 public sealed class SanmaScoreLedger(string path)
 {
+    private const int StartingScore = 35000;
     private Dictionary<string, Result>? _results;
 
     private Dictionary<string, Result> Results => _results ??= File.Exists(path)
@@ -22,7 +23,7 @@ public sealed class SanmaScoreLedger(string path)
             !BroadcastApiProtocol.TryGetFinalScores(observe, out var scores))
             return false;
 
-        var deltas = observe.Players.ToDictionary(player => player.AccountId, player => scores[player.Seat] - 35000);
+        var deltas = observe.Players.ToDictionary(player => player.AccountId, player => scores[player.Seat] - StartingScore);
         if (Results.TryGetValue(observe.GameUuid, out var existing))
         {
             if (deltas.All(item => existing.Deltas.TryGetValue(item.Key, out var old) && old == item.Value))
@@ -44,8 +45,10 @@ public sealed class SanmaScoreLedger(string path)
         return true;
     }
 
-    public decimal Total(string contestId, long accountId, string? unfinishedGameUuid) => Results
-        .Where(item => item.Value.ContestId == contestId && item.Key != unfinishedGameUuid)
+    public static decimal CurrentGamePoints(int score) => (score - StartingScore) / 1000m;
+
+    public decimal Total(string contestId, long accountId, string? excludedGameUuid) => Results
+        .Where(item => item.Value.ContestId == contestId && item.Key != excludedGameUuid)
         .Sum(item => item.Value.Deltas.GetValueOrDefault(accountId) / 1000m);
 
     private sealed record Result(string ContestId, Dictionary<long, int> Deltas);

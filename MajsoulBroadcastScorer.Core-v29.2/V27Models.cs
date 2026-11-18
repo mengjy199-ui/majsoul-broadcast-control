@@ -35,6 +35,7 @@ public enum OverlayLayoutStyle
 
 public enum VerticalNameContent { PlayerName, TeamName }
 public enum VerticalNumberContent { CalculationPoints, CurrentScore }
+public enum SanmaNumberContent { CurrentScore, ThisGame, Cumulative }
 
 public static class WindText
 {
@@ -106,6 +107,8 @@ public sealed class V27Settings
     public VerticalNameContent VerticalName { get; set; } = VerticalNameContent.TeamName;
     public VerticalNumberContent VerticalNumber { get; set; } = VerticalNumberContent.CurrentScore;
     public bool SanmaShowCumulative { get; set; }
+    public SanmaNumberContent? SanmaNumber { get; set; }
+    public int SanmaPlayerGap { get; set; } = 16;
     public string LastSettlementGameUuid { get; set; } = string.Empty;
     public int GapSelectedSeat { get; set; }
     public ReversalTargetMode GapTargetMode { get; set; } = ReversalTargetMode.PreviousRank;
@@ -139,6 +142,9 @@ public sealed class V27Settings
         var migratingFromV27 = Version < 271;
         var migratingTeams = Version < 292;
         Version = 292;
+        if (SanmaNumber is not { } sanmaNumber || !Enum.IsDefined(sanmaNumber))
+            SanmaNumber = SanmaShowCumulative ? SanmaNumberContent.Cumulative : SanmaNumberContent.CurrentScore;
+        SanmaPlayerGap = Math.Clamp(SanmaPlayerGap, 0, 64);
         LastSettlementGameUuid = (LastSettlementGameUuid ?? string.Empty).Trim();
         if (!Enum.IsDefined(VerticalName)) VerticalName = VerticalNameContent.TeamName;
         if (!Enum.IsDefined(VerticalNumber)) VerticalNumber = VerticalNumberContent.CurrentScore;
@@ -305,6 +311,7 @@ public sealed record DisplayPlayerState(
     string TeamName)
 {
     public long AccountId { get; init; }
+    public int? ApiScore { get; init; }
 }
 
 public sealed record LiveDisplayState(
@@ -443,7 +450,8 @@ public sealed class LiveStateReducer
                 setting.AvatarFramePath,
                 setting.TeamNameLocked ? setting.TeamName : api.TeamName)
             {
-                AccountId = api.AccountId
+                AccountId = api.AccountId,
+                ApiScore = api.Score
             };
         }).ToArray();
 

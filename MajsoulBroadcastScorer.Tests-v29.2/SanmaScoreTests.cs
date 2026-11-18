@@ -20,7 +20,14 @@ public sealed class SanmaScoreTests
 
             var reopened = new SanmaScoreLedger(path);
             Assert.False(reopened.Record("contest-a", first));
-            Assert.True(reopened.Record("contest-a", Game("second", [102, 103, 101], [34700, 33000, 37300])));
+            Assert.Equal(2.3m, SanmaScoreLedger.CurrentGamePoints(37300));
+            Assert.Equal(-5m, SanmaScoreLedger.CurrentGamePoints(30000));
+            Assert.Equal(-5m, reopened.Total("contest-a", 101, null));
+
+            var second = Game("second", [102, 103, 101], [34700, 33000, 37300]);
+            Assert.True(reopened.Record("contest-a", second));
+            Assert.Equal(-5m, reopened.Total("contest-a", 101, "second"));
+            Assert.False(reopened.Record("contest-a", second));
             Assert.Equal(-2.7m, reopened.Total("contest-a", 101, null));
             Assert.Equal(0m, reopened.Total("contest-b", 101, null));
         }

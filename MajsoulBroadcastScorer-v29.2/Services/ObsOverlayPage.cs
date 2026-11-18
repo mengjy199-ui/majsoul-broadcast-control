@@ -56,7 +56,7 @@ public static class ObsOverlayPage
     .score { position: absolute; left: 12px; right: 7px; top: 105px; height: 48px; overflow: hidden; white-space: nowrap; font-size: 38px; font-weight: 1000; font-variant-numeric: tabular-nums; line-height: 1.2; }
     .total { position: absolute; left: 12px; top: 159px; font-size: 29px; font-weight: 900; font-variant-numeric: tabular-nums; }
     .point-split { display: none; }
-    .team { display: none; }
+    .team { display: none; font-size: 16px; }
     .avatar-orbit, .divider-effects { display: none; }
     #stage.vertical-avatar #left-board,
     #stage.vertical-avatar #logo,
@@ -182,10 +182,10 @@ public static class ObsOverlayPage
     #stage.frieren-avatar .avatar-shell::before,
     #stage.frieren-avatar .avatar-shell::after,
     #stage.frieren-avatar .avatar-frame { animation: none !important; transition: none !important; transform: none !important; }
-    #stage.frieren-sanma #players { top: 250px; height: 654px; grid-template-rows: repeat(3, 1fr); row-gap: 48px; }
-    #stage.frieren-sanma .team { position: absolute; left: 9px; top: 151px; width: 154px; height: 29px;
+    #stage.frieren-sanma #players { top: 250px; height: auto; grid-template-rows: repeat(3, 186px); row-gap: var(--sanma-gap, 16px); }
+    #stage.frieren-sanma .team { position: absolute; left: 5px; top: 151px; width: 162px; height: 29px;
       display: block; overflow: hidden; white-space: nowrap; text-align: center;
-      color: #e5f6ed; font: 700 16px/29px "Microsoft YaHei UI", sans-serif; text-shadow: 0 2px 4px #00111e; }
+      color: #e5f6ed; font: 800 22px/29px "Microsoft YaHei UI", sans-serif; text-shadow: 0 2px 4px #00111e; }
     #stage.frieren-sanma .divider-effects { display: none; }
 
     @keyframes art-orbit-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
@@ -521,8 +521,8 @@ public static class ObsOverlayPage
       const text = value || '未设置队伍';
       element.textContent = text;
       element.title = text;
-      let size = 16;
-      element.style.fontSize = `${size}px`;
+      element.style.fontSize = '';
+      let size = Number.parseFloat(getComputedStyle(element).fontSize);
       while (element.scrollWidth > element.clientWidth && size > 11) {
         size -= 1;
         element.style.fontSize = `${size}px`;
@@ -674,6 +674,8 @@ public static class ObsOverlayPage
         stage.classList.toggle('brand-avatar', state.layoutStyle === 'verticalAvatar' || frierenMode || matchMode);
         stage.classList.toggle('frieren-avatar', frierenMode);
         stage.classList.toggle('frieren-sanma', sanmaMode);
+        if (sanmaMode)
+          stage.style.setProperty('--sanma-gap', `${Math.max(0, Math.min(64, Number(state.sanmaPlayerGap ?? 16)))}px`);
         stage.classList.toggle('team-mode', teamMode);
         stage.classList.toggle('gap-conditions', gapConditions);
         applyAsset(leftBoard, state.hasLeftBoard, '/asset/left-board', state.leftBoardVersion);
@@ -702,9 +704,11 @@ public static class ObsOverlayPage
             fitName(nodes.name, player.nickname);
           fitTeam(nodes.team, player.teamName);
           if (sanmaMode) {
-            const value = player.sanmaCumulative == null ? '—' : sanmaNumberFormat.format(player.sanmaCumulative);
+            const points = state.sanmaNumberMode === 'thisGame' ? player.sanmaThisGame : player.sanmaCumulative;
+            const showingPoints = state.sanmaNumberMode === 'thisGame' || state.sanmaNumberMode === 'cumulative';
+            const value = points == null ? '—' : sanmaNumberFormat.format(points);
             nodes.total.style.display = 'block';
-            nodes.totalValue.textContent = state.sanmaShowCumulative ? value : String(player.score);
+            nodes.totalValue.textContent = showingPoints ? value : String(player.score);
             nodes.lastTotal = null;
             fitTotal(nodes.total, nodes.totalValue);
             applyAsset(nodes.avatar, player.hasAvatar && !player.transparentAvatar, `/asset/avatar-${i}`, player.avatarVersion);
