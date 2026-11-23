@@ -229,7 +229,7 @@ public static class ObsOverlayPage
     const playerNodes = [];
     let gapNodes;
     const previewMode = new URLSearchParams(location.search).get('preview') === '1';
-    const sanmaNumberFormat = new Intl.NumberFormat('zh-CN', {
+    const scoreDeltaFormat = new Intl.NumberFormat('zh-CN', {
       signDisplay: 'exceptZero', maximumFractionDigits: 1, useGrouping: false
     });
     document.body.classList.toggle('preview', previewMode);
@@ -703,10 +703,12 @@ public static class ObsOverlayPage
           else
             fitName(nodes.name, player.nickname);
           fitTeam(nodes.team, player.teamName);
-          if (sanmaMode) {
-            const points = state.sanmaNumberMode === 'thisGame' ? player.sanmaThisGame : player.sanmaCumulative;
-            const showingPoints = state.sanmaNumberMode === 'thisGame' || state.sanmaNumberMode === 'cumulative';
-            const value = points == null ? '—' : sanmaNumberFormat.format(points);
+          if (frierenMode) {
+            const numberMode = sanmaMode ? state.sanmaNumberMode : state.frierenFourNumberMode;
+            const points = numberMode === 'thisGame' ? player.sanmaThisGame
+              : sanmaMode ? player.sanmaCumulative : player.frierenFourCumulative;
+            const showingPoints = numberMode === 'thisGame' || numberMode === 'cumulative';
+            const value = points == null ? '—' : scoreDeltaFormat.format(points);
             nodes.total.style.display = 'block';
             nodes.totalValue.textContent = showingPoints ? value : String(player.score);
             nodes.lastTotal = null;

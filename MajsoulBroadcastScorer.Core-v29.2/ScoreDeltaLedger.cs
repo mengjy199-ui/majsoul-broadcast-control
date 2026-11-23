@@ -2,14 +2,19 @@ using System.Text.Json;
 
 namespace MajsoulBroadcastScorer.Core.V27;
 
-public sealed class SanmaScoreLedger(string path)
+public sealed class ScoreDeltaLedger(string path, int playerCount)
 {
-    private const int StartingScore = 35000;
+    private readonly int _startingScore = playerCount switch
+    {
+        3 => 35000,
+        4 => 25000,
+        _ => throw new ArgumentOutOfRangeException(nameof(playerCount))
+    };
     private Dictionary<string, Result>? _results;
 
     private Dictionary<string, Result> Results => _results ??= File.Exists(path)
         ? JsonSerializer.Deserialize<Dictionary<string, Result>>(File.ReadAllText(path), V27SettingsJson.Options)
-            ?? throw new InvalidDataException("三人南累计记录为空。")
+            ?? throw new InvalidDataException("累计得失分记录为空。")
         : new(StringComparer.Ordinal);
 
     public string GetContest(string gameUuid, string fallback) =>
@@ -17,13 +22,14 @@ public sealed class SanmaScoreLedger(string path)
 
     public bool Record(string contestId, BroadcastObserveState observe)
     {
-        if (observe.Players.Count != 3 || string.IsNullOrWhiteSpace(observe.GameUuid) ||
+        if (observe.Players.Count != playerCount || string.IsNullOrWhiteSpace(observe.GameUuid) ||
             observe.Players.Any(player => player.AccountId <= 0) ||
-            observe.Players.Select(player => player.AccountId).Distinct().Count() != 3 ||
+            observe.Players.Select(player => player.AccountId).Distinct().Count() != playerCount ||
+            !observe.Players.Select(player => player.Seat).Order().SequenceEqual(Enumerable.Range(0, playerCount)) ||
             !BroadcastApiProtocol.TryGetFinalScores(observe, out var scores))
             return false;
 
-        var deltas = observe.Players.ToDictionary(player => player.AccountId, player => scores[player.Seat] - StartingScore);
+        var deltas = observe.Players.ToDictionary(player => player.AccountId, player => scores[player.Seat] - _startingScore);
         if (Results.TryGetValue(observe.GameUuid, out var existing))
         {
             if (deltas.All(item => existing.Deltas.TryGetValue(item.Key, out var old) && old == item.Value))
@@ -45,9 +51,9 @@ public sealed class SanmaScoreLedger(string path)
         return true;
     }
 
-    public static decimal CurrentGamePoints(int score) => (score - StartingScore) / 1000m;
+    public decimal CurrentGamePoints(int score) => (score - _startingScore) / 1000m;
 
-    public static decimal ProjectedTotal(decimal previous, int score) => previous + CurrentGamePoints(score);
+    public decimal ProjectedTotal(decimal previous, int score) => previous + CurrentGamePoints(score);
 
     public decimal Total(string contestId, long accountId, string? excludedGameUuid) => Results
         .Where(item => item.Value.ContestId == contestId && item.Key != excludedGameUuid)

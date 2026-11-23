@@ -27,9 +27,6 @@ public partial class MainWindow : Window
     private readonly VerticalCardPublication _verticalCardPublication;
     private readonly LiveStateReducer _reducer;
     private readonly LiveStateReducer _reportReducer;
-    private readonly SanmaScoreLedger _sanmaLedger = new(Path.Combine(AppContext.BaseDirectory, "reports", "sanma-totals.json"));
-    private readonly Dictionary<string, string> _sanmaContestByGame = new(StringComparer.Ordinal);
-    private string? _sanmaSaveError;
     private readonly TotalPointsDraft _totalPointsDraft;
     private readonly PlayerPresentationDraft _playerPresentationDraft = new();
     private readonly MatchScoreReportRecorder _scoreReportRecorder;
@@ -162,8 +159,8 @@ public partial class MainWindow : Window
         {
             if (_reportReducer.Apply(state))
             {
-                if (state.Observe is { Players.Count: 3 } sanma)
-                    RecordSanmaResult(sanma);
+                if (state.Observe is { } observe)
+                    RecordScoreDeltaResult(observe);
                 var timestamp = state.ServerTime > 0
                     ? DateTimeOffset.FromUnixTimeMilliseconds(state.ServerTime)
                     : DateTimeOffset.Now;
@@ -496,7 +493,7 @@ public partial class MainWindow : Window
         UpdateStyleControls();
         UpdateReportStatus();
         UpdateCumulativeSettlement(display);
-        UpdateSanmaControls(display);
+        UpdateScoreDeltaControls(display);
         UpdateObs(display);
     }
 
@@ -572,8 +569,8 @@ public partial class MainWindow : Window
 
     private void UpdatePlayerEditors(LiveDisplayState display)
     {
-        var sanmaStyle = _stylePublication.PublishedStyle == OverlayLayoutStyle.FrierenSanma;
-        var sanmaPrevious = sanmaStyle && display.Players.Count == 3 ? GetSanmaPreviousPoints(display) : [];
+        var scoreDeltaPlayers = ScoreDeltaPlayerCount(_stylePublication.PublishedStyle);
+        var previousPoints = display.Players.Count == scoreDeltaPlayers ? GetScoreDeltaPreviousPoints(display) : [];
         if (PlayerEditorsControl.Items.Count != display.Players.Count)
             PlayerEditorsControl.ItemsSource = _playerEditors.Take(display.Players.Count).ToArray();
         foreach (var shown in display.Players)
@@ -586,10 +583,10 @@ public partial class MainWindow : Window
                 editor.Score = _rawScoreInputs[shown.Seat] ??
                     _playerPresentationDraft.GetScore(shown.Seat, shown.Score).ToString(CultureInfo.InvariantCulture);
                 editor.Wind = WindText.FromCode(shown.Wind);
-                if (sanmaStyle)
+                if (scoreDeltaPlayers > 0)
                 {
-                    editor.TotalVisibility = shown.Seat < 3 ? Visibility.Visible : Visibility.Collapsed;
-                    UpdateSanmaPriorEditor(editor, display, shown, sanmaPrevious);
+                    editor.TotalVisibility = shown.Seat < scoreDeltaPlayers ? Visibility.Visible : Visibility.Collapsed;
+                    UpdateScoreDeltaPriorEditor(editor, display, shown, previousPoints);
                 }
                 else
                 {
@@ -671,8 +668,8 @@ public partial class MainWindow : Window
                 setting.ManualWind = WindText.ToCode(editor.Wind);
                 break;
             case nameof(PlayerEditorViewModel.Total):
-                if (_stylePublication.PublishedStyle == OverlayLayoutStyle.FrierenSanma)
-                    StageSanmaPrior(editor);
+                if (ScoreDeltaPlayerCount(_stylePublication.PublishedStyle) > 0)
+                    StageScoreDeltaPrior(editor);
                 else
                 {
                     _rawTotalInputs[editor.Seat] = editor.Total;
@@ -737,7 +734,7 @@ public partial class MainWindow : Window
             _settings = saved;
             Array.Fill(_rawScoreInputs, null);
             Array.Fill(_rawTotalInputs, null);
-            _sanmaPriorDrafts.Clear();
+            _scoreDeltaPriorDrafts.Clear();
             _reducer.UpdateSettings(_settings);
             _reportReducer.UpdateSettings(_settings);
             _lastManualSaveAt = DateTimeOffset.Now;
@@ -785,7 +782,7 @@ public partial class MainWindow : Window
     private bool HasPendingChanges() =>
         _playerPresentationDraft.HasPendingChanges || _totalPointsDraft.HasPendingChanges ||
         _rawScoreInputs.Any(value => value is not null) || _rawTotalInputs.Any(value => value is not null) ||
-        _sanmaPriorDrafts.Count > 0;
+        _scoreDeltaPriorDrafts.Count > 0;
 
     private void UpdateConfirmChangesButton()
     {
@@ -811,7 +808,7 @@ public partial class MainWindow : Window
             .FirstOrDefault(seat => _rawTotalInputs[seat] is not null && !TryParseDecimal(_rawTotalInputs[seat]!, out _), -1);
         PlayerInputStatusText.Text = invalidTotal >= 0
             ? $"位置 {invalidTotal + 1} 的 START 精算点格式不正确。当前输入会保留，但不会播出。"
-            : _sanmaPriorDrafts.Values.Any(draft => !TryParseDecimal(draft.Text, out _))
+            : _scoreDeltaPriorDrafts.Values.Any(draft => !TryParseDecimal(draft.Text, out _))
                 ? "此前累计得失分格式不正确。请输入数字，例如 -5 或 +12.5。"
             : string.Empty;
     }
@@ -819,7 +816,7 @@ public partial class MainWindow : Window
     private void StageProjectedTotals_Click(object sender, RoutedEventArgs e)
     {
         var display = _reducer.Current;
-        if (_stylePublication.PublishedStyle == OverlayLayoutStyle.FrierenSanma || display.Players.Count == 3)
+        if (ScoreDeltaPlayerCount(_stylePublication.PublishedStyle) > 0 || display.Players.Count == 3)
             return;
         if (!display.Ended)
         {
@@ -862,9 +859,9 @@ public partial class MainWindow : Window
         if (StageProjectedTotalsButton is null || CumulativeSettlementHintText is null)
             return;
         StageProjectedTotalsButton.IsEnabled = false;
-        if (_stylePublication.PublishedStyle == OverlayLayoutStyle.FrierenSanma || display.Players.Count == 3)
+        if (ScoreDeltaPlayerCount(_stylePublication.PublishedStyle) > 0 || display.Players.Count == 3)
         {
-            StageProjectedTotalsButton.Content = "三人南自动累计";
+            StageProjectedTotalsButton.Content = "得失分自动累计";
             CumulativeSettlementHintText.Text = "收到三人桌终局后，程序按大会和雀魂账号自动累计得失分。";
             return;
         }
@@ -1379,12 +1376,18 @@ public partial class MainWindow : Window
                 AppContext.BaseDirectory, "Assets", "Fonts", "SourceHanSerifCN-LatinLower.woff2")
         };
         var calculatedBySeat = display.Players.Count == 4 ? GetCachedReversalResults(display) : null;
-        var sanmaPrevious = display.Players.Count == 3 ? GetSanmaPreviousPoints(display) : [];
+        var playerCount = display.Players.Count;
+        var useScoreDeltas = ScoreDeltaPlayerCount(_stylePublication.PublishedStyle) == playerCount ||
+            ScoreDeltaPlayerCount(_stylePublication.PreviewStyle) == playerCount;
+        var ledger = useScoreDeltas ? GetScoreDeltaLedger(playerCount) : null;
+        var previousPoints = useScoreDeltas ? GetScoreDeltaPreviousPoints(display) : [];
 
         var players = new List<ObsPlayerState>();
         foreach (var player in display.Players)
         {
-            var sanmaScore = display.Ended ? player.ApiScore ?? player.Score : player.Score;
+            var deltaScore = display.Ended ? player.ApiScore ?? player.Score : player.Score;
+            var cumulative = previousPoints.TryGetValue(player.AccountId, out var previous)
+                ? ledger?.ProjectedTotal(previous, deltaScore) : null;
             var path = _settingsStore.ResolveAsset(player.AvatarPath);
             var framePath = _settingsStore.ResolveAsset(player.AvatarFramePath);
             paths[$"avatar-{player.Seat}"] = path;
@@ -1412,11 +1415,9 @@ public partial class MainWindow : Window
                 framePath is not null,
                 VersionOf(framePath))
             {
-                SanmaCumulative = sanmaPrevious.TryGetValue(player.AccountId, out var previous)
-                    ? SanmaScoreLedger.ProjectedTotal(previous, sanmaScore) : null,
-                SanmaThisGame = display.Players.Count == 3
-                    ? SanmaScoreLedger.CurrentGamePoints(sanmaScore)
-                    : null
+                SanmaCumulative = playerCount == 3 ? cumulative : null,
+                SanmaThisGame = playerCount == 3 ? ledger?.CurrentGamePoints(deltaScore) : null,
+                FrierenFourCumulative = playerCount == 4 ? cumulative : null
             });
         }
 
@@ -1503,7 +1504,7 @@ public partial class MainWindow : Window
             Layout(_settings.LogoLayout, paths["logo"]),
             Layout(_settings.BottomLeftLayout, paths["bottom-left"]),
             _settings.GapSelectedSeat,
-            style == OverlayLayoutStyle.FrierenSanma && players.Count != 3 ? [] : players,
+            ScoreDeltaPlayerCount(style) is 0 || ScoreDeltaPlayerCount(style) == playerCount ? players : [],
             reversals,
             style == OverlayLayoutStyle.GapConditions ? selectedReversal : null)
         {
@@ -1515,6 +1516,7 @@ public partial class MainWindow : Window
                 SanmaNumberContent.Cumulative => "cumulative",
                 _ => "score"
             },
+            FrierenFourNumberMode = _settings.FrierenFourShowCumulative ? "cumulative" : "score",
             SanmaPlayerGap = _settings.SanmaPlayerGap
         };
 

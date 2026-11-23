@@ -110,6 +110,8 @@ public sealed class V27Settings
     public SanmaNumberContent? SanmaNumber { get; set; }
     public int SanmaPlayerGap { get; set; } = 16;
     public Dictionary<string, Dictionary<long, decimal>> SanmaPriorAdjustments { get; set; } = new(StringComparer.Ordinal);
+    public bool FrierenFourShowCumulative { get; set; }
+    public Dictionary<string, Dictionary<long, decimal>> FrierenFourPriorAdjustments { get; set; } = new(StringComparer.Ordinal);
     public string LastSettlementGameUuid { get; set; } = string.Empty;
     public int GapSelectedSeat { get; set; }
     public ReversalTargetMode GapTargetMode { get; set; } = ReversalTargetMode.PreviousRank;
@@ -147,6 +149,7 @@ public sealed class V27Settings
             SanmaNumber = SanmaShowCumulative ? SanmaNumberContent.Cumulative : SanmaNumberContent.CurrentScore;
         SanmaPlayerGap = Math.Clamp(SanmaPlayerGap, 0, 64);
         SanmaPriorAdjustments ??= new(StringComparer.Ordinal);
+        FrierenFourPriorAdjustments ??= new(StringComparer.Ordinal);
         LastSettlementGameUuid = (LastSettlementGameUuid ?? string.Empty).Trim();
         if (!Enum.IsDefined(VerticalName)) VerticalName = VerticalNameContent.TeamName;
         if (!Enum.IsDefined(VerticalNumber)) VerticalNumber = VerticalNumberContent.CurrentScore;
@@ -242,15 +245,23 @@ public sealed class V27Settings
         !string.IsNullOrWhiteSpace(gameUuid) &&
         string.Equals(LastSettlementGameUuid, gameUuid, StringComparison.Ordinal);
 
-    public decimal SanmaPriorAdjustment(string contest, long accountId) =>
-        SanmaPriorAdjustments.GetValueOrDefault(contest)?.GetValueOrDefault(accountId) ?? 0m;
+    public decimal ScoreDeltaPriorAdjustment(int playerCount, string contest, long accountId) =>
+        PriorAdjustments(playerCount).GetValueOrDefault(contest)?.GetValueOrDefault(accountId) ?? 0m;
 
-    public void SetSanmaPriorAdjustment(string contest, long accountId, decimal adjustment)
+    public void SetScoreDeltaPriorAdjustment(int playerCount, string contest, long accountId, decimal adjustment)
     {
-        if (!SanmaPriorAdjustments.TryGetValue(contest, out var accounts))
-            SanmaPriorAdjustments[contest] = accounts = [];
+        var adjustments = PriorAdjustments(playerCount);
+        if (!adjustments.TryGetValue(contest, out var accounts))
+            adjustments[contest] = accounts = [];
         accounts[accountId] = adjustment;
     }
+
+    private Dictionary<string, Dictionary<long, decimal>> PriorAdjustments(int playerCount) => playerCount switch
+    {
+        3 => SanmaPriorAdjustments,
+        4 => FrierenFourPriorAdjustments,
+        _ => throw new ArgumentOutOfRangeException(nameof(playerCount))
+    };
 
     private static void ClearAccountProfile(PlayerSlotSettings player)
     {

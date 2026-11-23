@@ -92,7 +92,7 @@
           <Button Grid.Row="5" Grid.Column="3" Content="上传头像框" Click="UploadAvatarFrame_Click"/>
         </Grid>
         <TextBlock Margin="3,12,3,8" Foreground="#AAB3C0" TextWrapping="Wrap"
-                   Text="修改资料及累计精算点后，点击“确认修改”一起保存并播出。座位风与立直红框选项即时生效。"/>
+                   Text="修改资料及此前累计后，点击“确认修改”一起保存并播出。座位风与立直红框选项即时生效。"/>
         <Button Content="确认修改" Style="{StaticResource ConfirmChangesButtonStyle}" Click="ConfirmChanges_Click" HorizontalAlignment="Right"/>
       </StackPanel>
     </DataTemplate>
@@ -161,16 +161,16 @@
           </Grid>
         </Border>
 
-        <Border x:Name="SanmaDisplayControls" Background="{StaticResource AppSurfaceBrush}" BorderBrush="{StaticResource AppBorderBrush}"
+        <Border x:Name="ScoreDeltaDisplayControls" Background="{StaticResource AppSurfaceBrush}" BorderBrush="{StaticResource AppBorderBrush}"
                 BorderThickness="1" CornerRadius="10" Padding="18,12" Margin="0,0,0,14" Visibility="Collapsed">
           <StackPanel>
             <WrapPanel VerticalAlignment="Center">
-              <Button x:Name="SanmaCurrentButton" Content="当前分数" Click="SanmaDisplay_Click"/>
-              <Button x:Name="SanmaThisGameButton" Content="本半庄得失分" Click="SanmaDisplay_Click" Margin="8,3,3,3"/>
-              <Button x:Name="SanmaCumulativeButton" Content="累计得失分" Click="SanmaDisplay_Click" Margin="8,3,12,3"/>
-              <TextBlock x:Name="SanmaStatusText" VerticalAlignment="Center" Foreground="{StaticResource AppMutedTextBrush}"/>
+              <Button x:Name="CurrentScoreButton" Content="当前分数" Click="ScoreDeltaDisplay_Click"/>
+              <Button x:Name="SanmaThisGameButton" Content="本半庄得失分" Click="ScoreDeltaDisplay_Click" Margin="8,3,3,3"/>
+              <Button x:Name="CumulativeScoreDeltaButton" Content="累计得失分" Click="ScoreDeltaDisplay_Click" Margin="8,3,12,3"/>
+              <TextBlock x:Name="ScoreDeltaStatusText" VerticalAlignment="Center" Foreground="{StaticResource AppMutedTextBrush}"/>
             </WrapPanel>
-            <Grid Margin="3,8,3,0" HorizontalAlignment="Left">
+            <Grid x:Name="SanmaGapControls" Margin="3,8,3,0" HorizontalAlignment="Left">
               <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="180"/><ColumnDefinition Width="52"/></Grid.ColumnDefinitions>
               <TextBlock Text="选手间距" VerticalAlignment="Center"/>
               <Slider x:Name="SanmaGapSlider" Grid.Column="1" Margin="10,0" VerticalAlignment="Center" Minimum="0" Maximum="64"
@@ -275,7 +275,7 @@
         <StackPanel Margin="0,0,22,0" VerticalAlignment="Center">
           <TextBlock x:Name="ChangeStatusText" Text="暂无待确认修改" FontSize="14" FontWeight="SemiBold" TextWrapping="Wrap"
                      AutomationProperties.Name="{Binding Text, RelativeSource={RelativeSource Self}}" AutomationProperties.LiveSetting="Polite"/>
-          <TextBlock Text="选手资料与累计精算点统一保存" FontSize="12" Foreground="{StaticResource AppMutedTextBrush}" Margin="0,5,0,0"/>
+          <TextBlock Text="选手资料与此前累计统一保存" FontSize="12" Foreground="{StaticResource AppMutedTextBrush}" Margin="0,5,0,0"/>
           <TextBlock x:Name="PlayerInputStatusText" Foreground="#FF9BA1" TextWrapping="Wrap">
             <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Margin" Value="0,5,0,0"/>
               <Style.Triggers><Trigger Property="Text" Value=""><Setter Property="Visibility" Value="Collapsed"/></Trigger></Style.Triggers>

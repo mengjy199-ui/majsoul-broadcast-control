@@ -26,6 +26,7 @@ public sealed record ObsPlayerState(
 {
     public decimal? SanmaCumulative { get; init; }
     public decimal? SanmaThisGame { get; init; }
+    public decimal? FrierenFourCumulative { get; init; }
 }
 
 public sealed record ObsReversalPlayerState(
@@ -83,6 +84,7 @@ public sealed record ObsOverlayState(
     public string VerticalNameMode { get; init; } = "nickname";
     public string VerticalNumberMode { get; init; } = "totalPoints";
     public string SanmaNumberMode { get; init; } = "score";
+    public string FrierenFourNumberMode { get; init; } = "score";
     public int SanmaPlayerGap { get; init; } = 16;
 }
 
